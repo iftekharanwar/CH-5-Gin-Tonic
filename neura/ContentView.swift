@@ -8,14 +8,28 @@
 import SwiftUI
 
 struct ContentView: View {
+
+    @State private var navigateTo: SignDestination? = nil
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            ZStack {
+                // Metal animated meadow — fullscreen, behind everything
+                MeadowView()
+                    .ignoresSafeArea()
+
+                // Transparent sign labels + tap hit areas on top
+                SignOverlay(navigateTo: $navigateTo)
+            }
+            .ignoresSafeArea()
+            .navigationBarHidden(true)
+            .navigationDestination(item: $navigateTo) { dest in
+                switch dest {
+                case .learnWords: LearnWordsView()
+                case .letsDraw:   LetsDrawView()
+                }
+            }
         }
-        .padding()
     }
 }
 
