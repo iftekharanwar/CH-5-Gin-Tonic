@@ -1,5 +1,4 @@
 import SwiftUI
-import SceneKit
 #if os(iOS)
 import UIKit
 import RealityKit
@@ -31,6 +30,7 @@ struct LearnWordsView: View {
 
     @State private var drag: DragState? = nil
     @State private var slotFrame: CGRect = .zero
+    @State private var slotHighlighted = false
     @State private var bankLetters: [Character] = []
 
     private var puzzle: WordPuzzle { WordPuzzle.all[currentIndex] }
@@ -198,9 +198,7 @@ struct LearnWordsView: View {
                 if letter.isBlank {
                     BlankTile(
                         tileSize: tileSize,
-                        isHighlighted: drag != nil &&
-                            slotFrame.insetBy(dx: -20, dy: -20)
-                                .contains(drag?.position ?? .zero),
+                        isHighlighted: slotHighlighted,
                         puzzleState: puzzleState,
                         revealedLetter: isRevealed ? puzzle.missingLetter : nil,
                         revealedColor:  letterColor(puzzle.missingLetter)
@@ -258,12 +256,16 @@ struct LearnWordsView: View {
                                 position: value.location,
                                 tileSize: tileSize
                             )
+                            let over = slotFrame.insetBy(dx: -20, dy: -20)
+                                .contains(value.location)
+                            if over != slotHighlighted { slotHighlighted = over }
                         }
                         .onEnded { value in
                             let hit = slotFrame.insetBy(dx: -20, dy: -20)
                                 .contains(value.location)
                             let saved = drag
                             drag = nil
+                            slotHighlighted = false
                             if hit, let d = saved {
                                 handleDrop(d.letter)
                             }
@@ -323,14 +325,7 @@ struct LearnWordsView: View {
     // MARK: - Colour map
 
     private func letterColor(_ v: Character) -> Color {
-        switch v {
-        case "A": return Color(red: 0.85, green: 0.33, blue: 0.33)
-        case "E": return Color(red: 0.27, green: 0.60, blue: 0.85)
-        case "I": return Color(red: 0.55, green: 0.35, blue: 0.85)
-        case "O": return Color(red: 0.95, green: 0.55, blue: 0.15)
-        case "U": return Color(red: 0.25, green: 0.72, blue: 0.48)
-        default:  return Color(red: 0.28, green: 0.24, blue: 0.20)
-        }
+        Color(red: 0.28, green: 0.24, blue: 0.20)
     }
 }
 
@@ -451,7 +446,7 @@ private struct BlankTile: View {
     }
 }
 
-// MARK: - Floating 3D drag tile (SceneKit, no rotation gesture)
+// MARK: - Floating drag tile (lightweight 2D — no SceneKit overhead)
 
 private struct Dragging3DTile: View {
     let letter: Character
@@ -459,77 +454,19 @@ private struct Dragging3DTile: View {
     let size:   CGFloat
 
     var body: some View {
-        SceneKit3DLetter(letter: letter, color: color)
-            .frame(width: size, height: size)
+        ZStack {
+            // Soft background card
+            RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
+                .fill(Color.white)
+                .frame(width: size, height: size)
+
+            Text(String(letter))
+                .font(.app(size: size * 0.48))
+                .foregroundStyle(color)
+        }
+        .frame(width: size, height: size)
+        .rotationEffect(.degrees(-4))
     }
-}
-
-private struct SceneKit3DLetter: UIViewRepresentable {
-    let letter: Character
-    let color:  Color
-
-    func makeUIView(context: Context) -> SCNView {
-        let scnView = SCNView()
-        scnView.backgroundColor = .clear
-        scnView.allowsCameraControl = false
-        scnView.autoenablesDefaultLighting = false
-        scnView.antialiasingMode = .multisampling4X
-
-        let scene = SCNScene()
-        scnView.scene = scene
-
-        // Letter geometry
-        let text = SCNText(string: String(letter), extrusionDepth: 5)
-        text.font = UIFont.systemFont(ofSize: 24, weight: .black)
-        text.flatness = 0.1
-        text.chamferRadius = 0.6
-
-        let mat = SCNMaterial()
-        mat.diffuse.contents  = UIColor(color)
-        mat.specular.contents = UIColor.white
-        mat.shininess = 90
-        mat.lightingModel = .phong
-        text.materials = [mat]
-
-        let textNode = SCNNode(geometry: text)
-
-        // Centre pivot
-        let (minV, maxV) = textNode.boundingBox
-        textNode.pivot = SCNMatrix4MakeTranslation(
-            (maxV.x - minV.x) / 2 + minV.x,
-            (maxV.y - minV.y) / 2 + minV.y,
-            0
-        )
-
-        scene.rootNode.addChildNode(textNode)
-
-        // Lighting
-        let ambient = SCNLight(); ambient.type = .ambient
-        ambient.color = UIColor.white.withAlphaComponent(0.5)
-        let ambientNode = SCNNode(); ambientNode.light = ambient
-        scene.rootNode.addChildNode(ambientNode)
-
-        let key = SCNLight(); key.type = .directional
-        key.color = UIColor.white
-        let keyNode = SCNNode(); keyNode.light = key
-        keyNode.eulerAngles = SCNVector3(-0.5, 0.4, 0)
-        scene.rootNode.addChildNode(keyNode)
-
-        // Orthographic camera sized to letter
-        let w = maxV.x - minV.x
-        let camera = SCNCamera()
-        camera.usesOrthographicProjection = true
-        camera.orthographicScale = Double(w / 2) * 1.4
-        camera.zNear = 0.1; camera.zFar = 200
-        let camNode = SCNNode(); camNode.camera = camera
-        camNode.position = SCNVector3(0, 0, 60)
-        scene.rootNode.addChildNode(camNode)
-
-        return scnView
-    }
-
-    func updateUIView(_ uiView: SCNView, context: Context) {}
-    func makeCoordinator() -> () { () }
 }
 
 // MARK: - Fill Reward view (3D model after correct answer)
