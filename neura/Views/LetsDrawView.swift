@@ -34,6 +34,7 @@ struct DrawActivity {
 struct LetsDrawView: View {
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("drawCompletedCount") private var savedCount = 0
     @State private var activityIndex = 0
     @State private var completedCount = 0
     @State private var showAllDone = false
@@ -132,10 +133,23 @@ struct LetsDrawView: View {
         }
         .ignoresSafeArea(.all)
         .navigationBarHidden(true)
+        .onAppear {
+            let total = DrawActivity.all.count
+            if savedCount >= total {
+                // Already finished all — restart from scratch
+                completedCount = 0
+                activityIndex = 0
+                savedCount = 0
+            } else {
+                completedCount = savedCount
+                activityIndex = savedCount
+            }
+        }
     }
 
     private func advanceActivity(geo: GeometryProxy) {
         completedCount += 1
+        savedCount = completedCount
         let next = activityIndex + 1
         if next >= DrawActivity.all.count {
             withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }

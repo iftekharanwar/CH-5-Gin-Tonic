@@ -21,6 +21,7 @@ struct LearnWordsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speaker = WordSpeaker()
 
+    @AppStorage("fillCompletedCount") private var savedCount = 0
     @State private var currentIndex  = 0
     @State private var puzzleState: PuzzleState = .idle
     @State private var isRevealed    = false
@@ -141,9 +142,17 @@ struct LearnWordsView: View {
             bankLetters = Self.makeBankLetters(for: puzzle)
         }
         .onAppear {
-            if bankLetters.isEmpty {
-                bankLetters = Self.makeBankLetters(for: puzzle)
+            let total = WordPuzzle.all.count
+            if savedCount >= total {
+                // Already finished all — restart from scratch
+                completedCount = 0
+                currentIndex = 0
+                savedCount = 0
+            } else {
+                completedCount = savedCount
+                currentIndex = savedCount
             }
+            bankLetters = Self.makeBankLetters(for: puzzle)
         }
     }
 
@@ -298,6 +307,7 @@ struct LearnWordsView: View {
 
     private func advanceWord() {
         completedCount += 1
+        savedCount = completedCount
         if isLastWord {
             withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }
         } else {

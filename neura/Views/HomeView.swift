@@ -4,6 +4,9 @@ import SwiftUI
 
 struct HomeView: View {
 
+    @AppStorage("drawCompletedCount") private var drawCompleted = 0
+    @AppStorage("fillCompletedCount") private var fillCompleted = 0
+
     @State private var navigateTo: HomeDestination? = nil
     @State private var cardsVisible  = false
     @State private var mascotVisible = false
@@ -41,6 +44,8 @@ struct HomeView: View {
                             ActivityCard(
                                 title: "DRAW",
                                 imageName: "drawasset",
+                                progress: drawCompleted,
+                                total: DrawActivity.all.count,
                                 geo: geo
                             ) {
                                 showMascot(text: "Let's draw! Pick up your brush!", geo: geo)
@@ -56,6 +61,8 @@ struct HomeView: View {
                             ActivityCard(
                                 title: "FILL",
                                 imageName: "fillwords",
+                                progress: fillCompleted,
+                                total: WordPuzzle.all.count,
                                 geo: geo
                             ) {
                                 showMascot(text: "Let's fill in the letters! You can do it!", geo: geo)
@@ -108,20 +115,19 @@ struct HomeView: View {
             .navigationBarHidden(true)
             .onAppear {
                 cardsVisible = true
+                let greeting = homeGreeting()
                 if hasAppeared {
-                    // Returning from a sub-screen — restore state instantly, no delays
                     mascotVisible = true
-                    bubbleText    = "Hi! Pick an activity!"
+                    bubbleText    = greeting
                     bubbleVisible = true
                 } else {
                     hasAppeared = true
-                    // First launch — animate everything in
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         withAnimation(.spring(response: 0.6, dampingFraction: 0.65)) {
                             mascotVisible = true
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            bubbleText = "Hi! Pick an activity!"
+                            bubbleText = greeting
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                                 bubbleVisible = true
                             }
@@ -149,6 +155,19 @@ struct HomeView: View {
         bubbleText = text
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             bubbleVisible = true
+        }
+    }
+
+    private func homeGreeting() -> String {
+        let drawTotal = DrawActivity.all.count
+        let fillTotal = WordPuzzle.all.count
+        let allDone = drawCompleted >= drawTotal && fillCompleted >= fillTotal
+        if allDone {
+            return "You finished everything! Play again?"
+        } else if drawCompleted > 0 || fillCompleted > 0 {
+            return "Welcome back! Keep going!"
+        } else {
+            return "Hi! Pick an activity!"
         }
     }
 }
@@ -246,6 +265,8 @@ enum HomeDestination: Hashable {
 private struct ActivityCard: View {
     let title: String
     let imageName: String
+    let progress: Int
+    let total: Int
     let geo: GeometryProxy
     let action: () -> Void
 
@@ -255,6 +276,7 @@ private struct ActivityCard: View {
     private var titleFontSize: CGFloat { min(geo.size.width * 0.028, 26) }
     private var titlePadding: CGFloat  { geo.size.height * 0.018 }
     private var imagePadding: CGFloat  { geo.size.width * 0.02 }
+    private var isAllDone: Bool { progress >= total }
 
     var body: some View {
         Button {
@@ -262,11 +284,33 @@ private struct ActivityCard: View {
         } label: {
             VStack(spacing: 0) {
                 // ── Title area ─────────────────────────────────────────
-                Text(title)
-                    .font(.app(size: titleFontSize))
-                    .foregroundStyle(Color.appOrange)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, titlePadding)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.app(size: titleFontSize))
+                        .foregroundStyle(Color.appOrange)
+
+                    if progress > 0 {
+                        Text(isAllDone ? "done" : "\(progress)/\(total)")
+                            .font(.app(size: titleFontSize * 0.55))
+                            .foregroundStyle(
+                                isAllDone
+                                ? Color(red: 0.18, green: 0.65, blue: 0.35)
+                                : Color(red: 0.55, green: 0.42, blue: 0.28)
+                            )
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(
+                                        isAllDone
+                                        ? Color(red: 0.18, green: 0.65, blue: 0.35).opacity(0.15)
+                                        : Color.appCardBorder.opacity(0.25)
+                                    )
+                            )
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, titlePadding)
 
                 // ── Divider ────────────────────────────────────────────
                 Rectangle()
@@ -286,7 +330,10 @@ private struct ActivityCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.appCardBorder, lineWidth: 2)
+                    .strokeBorder(
+                        isAllDone ? Color(red: 0.18, green: 0.65, blue: 0.35) : Color.appCardBorder,
+                        lineWidth: isAllDone ? 2.5 : 2
+                    )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: Color.appCardBorder.opacity(0.35), radius: 12, x: 0, y: 6)
