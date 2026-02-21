@@ -2,6 +2,8 @@ import SwiftUI
 import SceneKit
 #if os(iOS)
 import UIKit
+import RealityKit
+import Combine
 #endif
 
 // MARK: - Drag state
@@ -24,6 +26,7 @@ struct LearnWordsView: View {
     @State private var isRevealed    = false
     @State private var completedCount = 0
     @State private var showAllDone   = false
+    @State private var showReward    = false
 
     @State private var drag: DragState? = nil
     @State private var slotFrame: CGRect = .zero
@@ -51,47 +54,56 @@ struct LearnWordsView: View {
                     .clipped()
                     .ignoresSafeArea(.all)
 
-                // ── Main layout ───────────────────────────────────────
-                VStack(spacing: 0) {
-                    topBar(geo: geo)
-
-                    Spacer(minLength: geo.size.height * 0.02)
-
-                    // Word illustration — scales with screen height, capped
-                    Image(puzzle.modelName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: min(geo.size.height * 0.26, geo.size.width * 0.22))
-
-                    Spacer(minLength: geo.size.height * 0.03)
-
-                    // Word tiles row: C _ T
-                    wordRow(geo: geo)
-
-                    Spacer(minLength: geo.size.height * 0.03)
-
-                    // Hint text
-                    Text(isRevealed ? "AMAZING!" : "DRAG THE MISSING LETTER!")
-                        .font(.app(size: min(geo.size.width * 0.022, 20)))
-                        .foregroundStyle(
-                            isRevealed
-                            ? Color(red: 0.18, green: 0.62, blue: 0.32)
-                            : Color(red: 0.55, green: 0.42, blue: 0.28)
-                        )
-                        .animation(.easeInOut(duration: 0.25), value: isRevealed)
-                        .padding(.bottom, geo.size.height * 0.02)
-
-                    // Letter bank
-                    letterBank(geo: geo)
-                        .padding(.bottom, geo.size.height * 0.02)
-
-                    if isRevealed {
-                        nextButton(geo: geo)
-                            .padding(.bottom, geo.size.height * 0.03)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                if showReward {
+                    // ── 3D reward screen ─────────────────────────────────
+                    FillRewardView(
+                        word: puzzle.word,
+                        imageName: puzzle.modelName,
+                        modelName: puzzle.modelName,
+                        geo: geo,
+                        isLastWord: isLastWord
+                    ) {
+                        advanceWord()
                     }
+                    .transition(.opacity)
+                    .zIndex(2)
+                } else {
+                    // ── Main layout ───────────────────────────────────────
+                    VStack(spacing: 0) {
+                        topBar(geo: geo)
 
-                    Spacer(minLength: geo.size.height * 0.02)
+                        Spacer(minLength: geo.size.height * 0.02)
+
+                        // Word illustration — scales with screen height, capped
+                        Image(puzzle.modelName)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: min(geo.size.height * 0.26, geo.size.width * 0.22))
+
+                        Spacer(minLength: geo.size.height * 0.03)
+
+                        // Word tiles row: C _ T
+                        wordRow(geo: geo)
+
+                        Spacer(minLength: geo.size.height * 0.03)
+
+                        // Hint text
+                        Text(isRevealed ? "AMAZING!" : "DRAG THE MISSING LETTER!")
+                            .font(.app(size: min(geo.size.width * 0.022, 20)))
+                            .foregroundStyle(
+                                isRevealed
+                                ? Color(red: 0.18, green: 0.62, blue: 0.32)
+                                : Color(red: 0.55, green: 0.42, blue: 0.28)
+                            )
+                            .animation(.easeInOut(duration: 0.25), value: isRevealed)
+                            .padding(.bottom, geo.size.height * 0.02)
+
+                        // Letter bank
+                        letterBank(geo: geo)
+                            .padding(.bottom, geo.size.height * 0.02)
+
+                        Spacer(minLength: geo.size.height * 0.02)
+                    }
                 }
 
                 // ── Floating 3D drag tile ─────────────────────────────
@@ -123,6 +135,7 @@ struct LearnWordsView: View {
             }
         }
         .onChange(of: currentIndex) { _, _ in
+            showReward = false
             isRevealed = false
             puzzleState = .idle
             bankLetters = Self.makeBankLetters(for: puzzle)
@@ -252,39 +265,7 @@ struct LearnWordsView: View {
         }
     }
 
-    // MARK: - Next button
-
-    private func nextButton(geo: GeometryProxy) -> some View {
-        let fontSize = min(geo.size.width * 0.022, 20)
-        return Button {
-            completedCount += 1
-            if isLastWord {
-                withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }
-            } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    currentIndex += 1
-                }
-            }
-        } label: {
-            HStack(spacing: geo.size.width * 0.01) {
-                Text(isLastWord ? "ALL DONE!" : "NEXT WORD")
-                    .font(.app(size: fontSize))
-                if !isLastWord {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: fontSize, weight: .bold))
-                }
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, geo.size.width * 0.04)
-            .padding(.vertical, geo.size.height * 0.016)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(red: 0.18, green: 0.62, blue: 0.32))
-                    .shadow(color: Color.green.opacity(0.30), radius: 8, x: 0, y: 4)
-            )
-        }
-        .buttonStyle(.plain)
-    }
+    // nextButton removed — reward view now has the continue button
 
     // MARK: - Logic
 
@@ -301,11 +282,31 @@ struct LearnWordsView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 speaker.spellThenSpeak(puzzle.word)
             }
+            // Show 3D reward after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    showReward = true
+                }
+            }
         } else {
             puzzleState = .wrong
             #if os(iOS)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             #endif
+        }
+    }
+
+    private func advanceWord() {
+        completedCount += 1
+        if isLastWord {
+            withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }
+        } else {
+            withAnimation(.easeInOut(duration: 0.35)) { showReward = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                isRevealed = false
+                puzzleState = .idle
+                currentIndex += 1
+            }
         }
     }
 
@@ -520,6 +521,128 @@ private struct SceneKit3DLetter: UIViewRepresentable {
     func updateUIView(_ uiView: SCNView, context: Context) {}
     func makeCoordinator() -> () { () }
 }
+
+// MARK: - Fill Reward view (3D model after correct answer)
+
+private struct FillRewardView: View {
+    let word: String
+    let imageName: String
+    let modelName: String
+    let geo: GeometryProxy
+    let isLastWord: Bool
+    let onContinue: () -> Void
+
+    @State private var modelVisible = false
+    @State private var labelVisible = false
+
+    private var hasModel: Bool {
+        Bundle.main.url(forResource: modelName, withExtension: "usdz") != nil
+    }
+
+    var body: some View {
+        ZStack {
+            Image("background")
+                .resizable()
+                .scaledToFill()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+                .ignoresSafeArea(.all)
+
+            VStack(spacing: geo.size.height * 0.025) {
+                Spacer()
+                #if os(iOS)
+                if hasModel {
+                    FillModelRealityView(modelName: modelName)
+                        .frame(width: min(geo.size.width * 0.75, 600),
+                               height: min(geo.size.height * 0.55, 500))
+                        .scaleEffect(modelVisible ? 1.0 : 0.4)
+                        .opacity(modelVisible ? 1.0 : 0)
+                        .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
+                } else {
+                    Image(imageName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: min(geo.size.width * 0.60, 480))
+                        .scaleEffect(modelVisible ? 1.0 : 0.4)
+                        .opacity(modelVisible ? 1.0 : 0)
+                        .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
+                }
+                #else
+                Image(imageName).resizable().scaledToFit()
+                    .frame(width: min(geo.size.width * 0.60, 480))
+                    .scaleEffect(modelVisible ? 1.0 : 0.4).opacity(modelVisible ? 1.0 : 0)
+                    .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
+                #endif
+
+                Text(word)
+                    .font(.app(size: min(geo.size.width * 0.07, 60)))
+                    .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
+                    .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.5), value: labelVisible)
+
+                Spacer()
+
+                Button(action: onContinue) {
+                    HStack(spacing: geo.size.width * 0.015) {
+                        Text(isLastWord ? "ALL DONE!" : "NEXT WORD")
+                            .font(.app(size: min(geo.size.width * 0.025, 22)))
+                        if !isLastWord {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: min(geo.size.width * 0.025, 22), weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, geo.size.width * 0.05)
+                    .padding(.vertical, geo.size.height * 0.018)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(red: 0.18, green: 0.62, blue: 0.32)))
+                }
+                .buttonStyle(.plain)
+                .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.7), value: labelVisible)
+                .padding(.bottom, geo.size.height * 0.06)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .onAppear { modelVisible = true; labelVisible = true }
+    }
+}
+
+// MARK: - RealityKit 3D model for Fill reward
+
+#if os(iOS)
+private struct FillModelRealityView: UIViewRepresentable {
+    let modelName: String
+
+    func makeUIView(context: Context) -> ARView {
+        let arView = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        arView.backgroundColor = .clear
+        arView.environment.background = .color(.clear)
+        arView.environment.lighting.intensityExponent = 1.5
+        guard let url = Bundle.main.url(forResource: modelName, withExtension: "usdz"),
+              let model = try? Entity.load(contentsOf: url) else { return arView }
+        let anchor = AnchorEntity(world: .zero)
+        anchor.addChild(model); arView.scene.addAnchor(anchor)
+        let bounds = model.visualBounds(relativeTo: nil)
+        let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
+        let scale  = maxDim > 0 ? Float(0.22 / maxDim) : 1.0
+        model.scale    = SIMD3<Float>(repeating: scale)
+        model.position = SIMD3<Float>(-bounds.center.x*scale, -bounds.center.y*scale, -0.45)
+        var elapsed: Float = 0
+        arView.scene.subscribe(to: SceneEvents.Update.self) { ev in
+            elapsed += Float(ev.deltaTime) * 0.45
+            model.transform.rotation = simd_quatf(angle: elapsed, axis: [0, 1, 0])
+        }.store(in: &context.coordinator.bag)
+        let cam = PerspectiveCamera(); cam.camera.fieldOfViewInDegrees = 36
+        let camAnchor = AnchorEntity(world: [0, 0, 0.65]); camAnchor.addChild(cam)
+        arView.scene.addAnchor(camAnchor)
+        return arView
+    }
+    func updateUIView(_ uiView: ARView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    class Coordinator { var bag = Set<AnyCancellable>() }
+}
+#endif
 
 // MARK: - All Done celebration screen (Fill)
 
