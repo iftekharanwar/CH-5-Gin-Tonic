@@ -553,8 +553,9 @@ private struct FillRewardView: View {
                 #if os(iOS)
                 if hasModel {
                     FillModelRealityView(modelName: modelName)
-                        .frame(width: min(geo.size.width * 0.75, 600),
-                               height: min(geo.size.height * 0.55, 500))
+                        .frame(width: geo.size.width * 0.92,
+                               height: geo.size.height * 0.55)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .scaleEffect(modelVisible ? 1.0 : 0.4)
                         .opacity(modelVisible ? 1.0 : 0)
                         .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
@@ -562,7 +563,7 @@ private struct FillRewardView: View {
                     Image(imageName)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: min(geo.size.width * 0.60, 480))
+                        .frame(width: geo.size.width * 0.80)
                         .scaleEffect(modelVisible ? 1.0 : 0.4)
                         .opacity(modelVisible ? 1.0 : 0)
                         .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
@@ -619,28 +620,95 @@ private struct FillModelRealityView: UIViewRepresentable {
         arView.backgroundColor = .clear
         arView.environment.background = .color(.clear)
         arView.environment.lighting.intensityExponent = 1.5
+
         guard let url = Bundle.main.url(forResource: modelName, withExtension: "usdz"),
               let model = try? Entity.load(contentsOf: url) else { return arView }
         let anchor = AnchorEntity(world: .zero)
         anchor.addChild(model); arView.scene.addAnchor(anchor)
         let bounds = model.visualBounds(relativeTo: nil)
         let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
-        let scale  = maxDim > 0 ? Float(0.22 / maxDim) : 1.0
-        model.scale    = SIMD3<Float>(repeating: scale)
-        model.position = SIMD3<Float>(-bounds.center.x*scale, -bounds.center.y*scale, -0.45)
+        let baseScale = maxDim > 0 ? Float(0.35 / maxDim) : 1.0
+        model.scale    = SIMD3<Float>(repeating: baseScale)
+        model.position = SIMD3<Float>(-bounds.center.x*baseScale, -bounds.center.y*baseScale, -0.45)
+
+        let coord = context.coordinator
+        coord.modelEntity = model
+        coord.baseScale = baseScale
+
+        // Gentle idle spin — pauses when kid is touching
         var elapsed: Float = 0
         arView.scene.subscribe(to: SceneEvents.Update.self) { ev in
-            elapsed += Float(ev.deltaTime) * 0.45
+            guard !coord.isTouching else { return }
+            elapsed += Float(ev.deltaTime) * 0.35
             model.transform.rotation = simd_quatf(angle: elapsed, axis: [0, 1, 0])
-        }.store(in: &context.coordinator.bag)
-        let cam = PerspectiveCamera(); cam.camera.fieldOfViewInDegrees = 36
-        let camAnchor = AnchorEntity(world: [0, 0, 0.65]); camAnchor.addChild(cam)
+        }.store(in: &coord.bag)
+
+        let cam = PerspectiveCamera(); cam.camera.fieldOfViewInDegrees = 28
+        let camAnchor = AnchorEntity(world: [0, 0, 0.55]); camAnchor.addChild(cam)
         arView.scene.addAnchor(camAnchor)
+
+        // Drag to spin
+        let pan = UIPanGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePan(_:)))
+        arView.addGestureRecognizer(pan)
+
+        // Pinch to zoom
+        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePinch(_:)))
+        arView.addGestureRecognizer(pinch)
+
         return arView
     }
     func updateUIView(_ uiView: ARView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    class Coordinator { var bag = Set<AnyCancellable>() }
+    func makeCoordinator() -> FillCoordinator { FillCoordinator() }
+}
+
+class FillCoordinator: NSObject {
+    var bag = Set<AnyCancellable>()
+    var modelEntity: Entity?
+    var baseScale: Float = 1.0
+    var isTouching = false
+
+    private var rotationX: Float = 0
+    private var rotationY: Float = 0
+    private var currentZoom: Float = 1.0
+
+    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard let model = modelEntity else { return }
+        switch gesture.state {
+        case .began:
+            isTouching = true
+        case .changed:
+            let translation = gesture.translation(in: gesture.view)
+            rotationY += Float(translation.x) * 0.008
+            rotationX += Float(translation.y) * 0.008
+            rotationX = min(max(rotationX, -.pi / 3), .pi / 3)
+            let qX = simd_quatf(angle: rotationX, axis: [1, 0, 0])
+            let qY = simd_quatf(angle: rotationY, axis: [0, 1, 0])
+            model.transform.rotation = qY * qX
+            gesture.setTranslation(.zero, in: gesture.view)
+        case .ended, .cancelled:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.isTouching = false
+            }
+        default: break
+        }
+    }
+
+    @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        guard let model = modelEntity else { return }
+        switch gesture.state {
+        case .began:
+            isTouching = true
+        case .changed:
+            currentZoom = min(max(Float(gesture.scale) * currentZoom, 0.5), 3.0)
+            model.scale = SIMD3<Float>(repeating: baseScale * currentZoom)
+            gesture.scale = 1.0
+        case .ended, .cancelled:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.isTouching = false
+            }
+        default: break
+        }
+    }
 }
 #endif
 
