@@ -69,6 +69,7 @@ struct LetsDrawView: View {
     @State private var mascotSpeech: String? = nil
     @State private var showMascotSpeech = false
     @State private var earnedStars = 0
+    @State private var showLeaveAlert = false
 
     private var activity: DrawActivity { DrawActivity.all[activityIndex] }
 
@@ -106,7 +107,13 @@ struct LetsDrawView: View {
                     let minDim = min(geo.size.width, geo.size.height)
                     VStack(spacing: 0) {
                         HStack {
-                            BackButton { dismiss() }
+                            BackButton {
+                                if strokes.isEmpty {
+                                    dismiss()
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showLeaveAlert = true }
+                                }
+                            }
                             Spacer()
                             HStack(spacing: minDim * 0.008) {
                                 ForEach(0..<DrawActivity.all.count, id: \.self) { i in
@@ -175,6 +182,16 @@ struct LetsDrawView: View {
         }
         .ignoresSafeArea(.all)
         .navigationBarHidden(true)
+        .overlay {
+            if showLeaveAlert {
+                LeaveDrawingAlert(
+                    onStay: { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showLeaveAlert = false } },
+                    onLeave: { dismiss() }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                .zIndex(200)
+            }
+        }
         .onAppear {
             let total = DrawActivity.all.count
             if savedCount >= total {
@@ -839,6 +856,107 @@ private struct AllDoneView: View {
             }
             labelVisible = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { floatY = -14 }
+        }
+    }
+}
+
+// MARK: - Leave Drawing Alert
+
+private struct LeaveDrawingAlert: View {
+    let onStay: () -> Void
+    let onLeave: () -> Void
+
+    @State private var pressed: String? = nil
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { onStay() }
+
+            VStack(spacing: 0) {
+                Image("startmascot")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 80)
+                    .offset(y: 20)
+                    .zIndex(1)
+
+                VStack(spacing: 16) {
+                    Text("Wait!")
+                        .font(.app(size: 28))
+                        .foregroundStyle(Color.appOrange)
+                        .padding(.top, 24)
+
+                    Text("Your drawing will be lost!")
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color(red: 0.45, green: 0.38, blue: 0.30))
+                        .multilineTextAlignment(.center)
+
+                    HStack(spacing: 16) {
+                        Button {
+                            onStay()
+                        } label: {
+                            Text("Keep Drawing")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color(red: 0.18, green: 0.65, blue: 0.35))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(pressed == "stay" ? 0.92 : 1.0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: pressed)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in pressed = "stay" }
+                                .onEnded { _ in pressed = nil }
+                        )
+
+                        Button {
+                            onLeave()
+                        } label: {
+                            Text("Leave")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color(red: 0.85, green: 0.30, blue: 0.25))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color(red: 0.85, green: 0.30, blue: 0.25).opacity(0.12))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .strokeBorder(Color(red: 0.85, green: 0.30, blue: 0.25).opacity(0.3), lineWidth: 1.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(pressed == "leave" ? 0.92 : 1.0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: pressed)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in pressed = "leave" }
+                                .onEnded { _ in pressed = nil }
+                        )
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.white.opacity(0.95))
+                        .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 8)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color.appCardBorder.opacity(0.4), lineWidth: 1.5)
+                )
+            }
+            .frame(maxWidth: 320)
         }
     }
 }

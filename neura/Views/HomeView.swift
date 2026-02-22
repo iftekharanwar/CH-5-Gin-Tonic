@@ -14,7 +14,7 @@ struct HomeView: View {
     @State private var bubbleText = ""
     @State private var hasAppeared   = false
     @State private var mascotScale: CGFloat = 1.0
-    @State private var musicOn = false
+    @AppStorage("musicOn") private var musicOn = false
 
     // Center-stage mascot animation
     @State private var mascotCenterStage = false
@@ -105,6 +105,9 @@ struct HomeView: View {
             .ignoresSafeArea(.all)
             .navigationBarHidden(true)
             .onAppear {
+                if musicOn && !SoundPlayer.shared.isMusicPlaying {
+                    SoundPlayer.shared.startBackgroundMusic()
+                }
                 cardsVisible = true
                 let greeting = homeGreeting()
                 if hasAppeared {

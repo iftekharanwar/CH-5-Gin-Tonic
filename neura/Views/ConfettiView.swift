@@ -5,6 +5,7 @@ import SwiftUI
 struct ConfettiView: View {
     @State private var particles: [ConfettiParticle] = []
     @State private var startTime: Date = .now
+    @State private var waveTimer: Timer?
 
     private let colors: [Color] = [
         Color(red: 1.0, green: 0.30, blue: 0.30),
@@ -54,21 +55,35 @@ struct ConfettiView: View {
         .allowsHitTesting(false)
         .onAppear {
             startTime = .now
-            particles = (0..<60).map { _ in
-                ConfettiParticle(
-                    startX: CGFloat.random(in: 0.05...0.95),
-                    startY: CGFloat.random(in: -0.15...0.05),
-                    velocityY: CGFloat.random(in: 30...80),
-                    driftX: CGFloat.random(in: -30...30),
-                    spin: CGFloat.random(in: -6...6),
-                    size: CGFloat.random(in: 6...14),
-                    color: colors.randomElement()!,
-                    shape: Int.random(in: 0...2),
-                    delay: Double.random(in: 0...0.5),
-                    lifetime: Double.random(in: 2.5...3.5)
-                )
+            spawnWave()
+            waveTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+                DispatchQueue.main.async { spawnWave() }
             }
         }
+        .onDisappear {
+            waveTimer?.invalidate()
+            waveTimer = nil
+        }
+    }
+
+    private func spawnWave() {
+        let newParticles = (0..<40).map { _ in
+            ConfettiParticle(
+                startX: CGFloat.random(in: 0.05...0.95),
+                startY: CGFloat.random(in: -0.15...0.05),
+                velocityY: CGFloat.random(in: 30...80),
+                driftX: CGFloat.random(in: -30...30),
+                spin: CGFloat.random(in: -6...6),
+                size: CGFloat.random(in: 6...14),
+                color: colors.randomElement()!,
+                shape: Int.random(in: 0...2),
+                delay: startTime.timeIntervalSinceNow * -1 + Double.random(in: 0...0.5),
+                lifetime: Double.random(in: 2.5...3.5)
+            )
+        }
+        particles.append(contentsOf: newParticles)
+        let now = Date().timeIntervalSince(startTime)
+        particles.removeAll { now - $0.delay > $0.lifetime + 0.5 }
     }
 
     private func starPath(center: CGPoint, size: CGFloat) -> Path {

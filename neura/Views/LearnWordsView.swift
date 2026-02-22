@@ -40,6 +40,7 @@ struct LearnWordsView: View {
     @State private var wrongCount = 0
     @State private var earnedStars = 0
     @State private var sparkleOrigin: CGPoint? = nil
+    @State private var canSkipToReward = false
 
     private var puzzle: WordPuzzle { WordPuzzle.all[currentIndex] }
     private var isLastWord: Bool { currentIndex == WordPuzzle.all.count - 1 }
@@ -112,6 +113,9 @@ struct LearnWordsView: View {
 
                         Spacer(minLength: geo.size.height * 0.01)
                     }
+                    .onTapGesture {
+                        if canSkipToReward { skipToReward() }
+                    }
                 }
 
                 if mascotVisible && !showReward && !showAllDone {
@@ -169,6 +173,7 @@ struct LearnWordsView: View {
             isRevealed = false
             puzzleState = .idle
             wrongCount = 0
+            canSkipToReward = false
             mascotSpeech = nil
             showMascotSpeech = false
             sparkleOrigin = nil
@@ -358,13 +363,11 @@ struct LearnWordsView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 SoundPlayer.shared.play(.success)
                 speaker.spellThenSpeak(puzzle.word)
+                canSkipToReward = true
             }
-            // Show reward after spelling completes
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
-                SoundPlayer.shared.play(.whoosh)
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    showReward = true
-                }
+            // Auto-advance to reward after spelling completes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) {
+                skipToReward()
             }
         } else {
             SoundPlayer.shared.play(.wrong)
@@ -405,6 +408,15 @@ struct LearnWordsView: View {
             withAnimation(.easeOut(duration: 0.3)) {
                 showMascotSpeech = false
             }
+        }
+    }
+
+    private func skipToReward() {
+        guard canSkipToReward && !showReward else { return }
+        canSkipToReward = false
+        SoundPlayer.shared.play(.whoosh)
+        withAnimation(.easeInOut(duration: 0.45)) {
+            showReward = true
         }
     }
 
