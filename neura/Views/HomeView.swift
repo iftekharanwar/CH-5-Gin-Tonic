@@ -28,66 +28,30 @@ struct HomeView: View {
                         .ignoresSafeArea(.all)
 
                     // ── Main content ───────────────────────────────────
+                    let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
                         // Wordmark
                         Text("neura")
-                            .font(.app(size: min(geo.size.width * 0.07, 56)))
+                            .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
                             .foregroundStyle(Color.appOrange)
                             .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
-                            .padding(.top, geo.size.height * 0.07)
+                            .padding(.top, geo.size.height * (isLand ? 0.07 : 0.05))
 
                         Spacer()
 
-                        // Cards row
-                        HStack(spacing: geo.size.width * 0.06) {
-                            Spacer(minLength: 0)
-                            ActivityCard(
-                                title: "DRAW",
-                                imageName: "drawasset",
-                                progress: drawCompleted,
-                                total: DrawActivity.all.count,
-                                geo: geo
-                            ) {
-                                showMascot(text: "Let's draw! Pick up your brush!", geo: geo)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                                    navigateTo = .draw
-                                }
-                            }
-                            .frame(width: cardWidth(geo), height: cardHeight(geo))
-                            .scaleEffect(cardsVisible ? 1.0 : 0.75)
-                            .opacity(cardsVisible ? 1.0 : 0)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.65).delay(0.05), value: cardsVisible)
-
-                            ActivityCard(
-                                title: "FILL",
-                                imageName: "fillwords",
-                                progress: fillCompleted,
-                                total: WordPuzzle.all.count,
-                                geo: geo
-                            ) {
-                                showMascot(text: "Let's fill in the letters! You can do it!", geo: geo)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                                    navigateTo = .fill
-                                }
-                            }
-                            .frame(width: cardWidth(geo), height: cardHeight(geo))
-                            .scaleEffect(cardsVisible ? 1.0 : 0.75)
-                            .opacity(cardsVisible ? 1.0 : 0)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.65).delay(0.18), value: cardsVisible)
-
-                            Spacer(minLength: 0)
-                        }
+                        // Cards — side by side in landscape, stacked in portrait
+                        cardsLayout(geo: geo, isLand: isLand)
+                            .frame(maxWidth: .infinity)
 
                         // Space below cards — leave room for mascot
-                        Spacer(minLength: geo.size.height * 0.16)
+                        Spacer(minLength: geo.size.height * (isLand ? 0.16 : 0.10))
                     }
+                    .frame(width: geo.size.width, height: geo.size.height)
 
                     // ── Star peeking from bottom-left + bubble above it ──
-                    // Star is large; positioned so only top ~40% is visible above screen bottom
-                    let starSize: CGFloat = min(geo.size.width * 0.20, 160)
-                    // Star centre X: slightly into screen so face is visible
+                    let minDim = min(geo.size.width, geo.size.height)
+                    let starSize: CGFloat = min(minDim * 0.20, 160)
                     let starCX: CGFloat = starSize * 0.45
-                    // Star centre Y: push it down so only top portion peeks above bottom edge
                     let starCY: CGFloat = geo.size.height - starSize * 0.10
 
                     if mascotVisible {
@@ -144,11 +108,63 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder
+    private func cardsLayout(geo: GeometryProxy, isLand: Bool) -> some View {
+        if isLand {
+            HStack(spacing: geo.size.width * 0.06) {
+                Spacer(minLength: 0)
+                activityCardView(title: "DRAW", imageName: "drawasset",
+                                 progress: drawCompleted, total: DrawActivity.all.count,
+                                 mascotText: "Let's draw! Pick up your brush!",
+                                 destination: .draw, delay: 0.05, geo: geo)
+                activityCardView(title: "FILL", imageName: "fillwords",
+                                 progress: fillCompleted, total: WordPuzzle.all.count,
+                                 mascotText: "Let's fill in the letters! You can do it!",
+                                 destination: .fill, delay: 0.18, geo: geo)
+                Spacer(minLength: 0)
+            }
+        } else {
+            VStack(spacing: geo.size.height * 0.025) {
+                activityCardView(title: "DRAW", imageName: "drawasset",
+                                 progress: drawCompleted, total: DrawActivity.all.count,
+                                 mascotText: "Let's draw! Pick up your brush!",
+                                 destination: .draw, delay: 0.05, geo: geo)
+                activityCardView(title: "FILL", imageName: "fillwords",
+                                 progress: fillCompleted, total: WordPuzzle.all.count,
+                                 mascotText: "Let's fill in the letters! You can do it!",
+                                 destination: .fill, delay: 0.18, geo: geo)
+            }
+        }
+    }
+
+    private func activityCardView(title: String, imageName: String,
+                                   progress: Int, total: Int,
+                                   mascotText: String, destination: HomeDestination,
+                                   delay: Double, geo: GeometryProxy) -> some View {
+        ActivityCard(title: title, imageName: imageName,
+                     progress: progress, total: total, geo: geo) {
+            showMascot(text: mascotText, geo: geo)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                navigateTo = destination
+            }
+        }
+        .frame(width: cardWidth(geo), height: cardHeight(geo))
+        .scaleEffect(cardsVisible ? 1.0 : 0.75)
+        .opacity(cardsVisible ? 1.0 : 0)
+        .animation(.spring(response: 0.5, dampingFraction: 0.65).delay(delay), value: cardsVisible)
+    }
+
     private func cardWidth(_ geo: GeometryProxy) -> CGFloat {
-        min(geo.size.width * 0.36, 300)
+        let isLand = geo.size.width > geo.size.height
+        return isLand
+            ? min(geo.size.width * 0.36, 300)
+            : min(geo.size.width * 0.55, 280)
     }
     private func cardHeight(_ geo: GeometryProxy) -> CGFloat {
-        cardWidth(geo) * 1.30
+        let isLand = geo.size.width > geo.size.height
+        return isLand
+            ? cardWidth(geo) * 1.30
+            : cardWidth(geo) * 0.85
     }
 
     private func showMascot(text: String, geo: GeometryProxy) {
@@ -178,12 +194,13 @@ private struct SpeechBubble: View {
     let text: String
     let geo: GeometryProxy
 
-    private var fontSize: CGFloat { min(geo.size.width * 0.022, 20) }
-    private var maxWidth: CGFloat { min(geo.size.width * 0.34, 260) }
-    private var padding: CGFloat  { geo.size.width * 0.022 }
-    private var radius: CGFloat   { geo.size.width * 0.028 }
-    private var tailW:  CGFloat   { geo.size.width * 0.030 }
-    private var tailH:  CGFloat   { geo.size.width * 0.028 }
+    private var minDim: CGFloat { min(geo.size.width, geo.size.height) }
+    private var fontSize: CGFloat { min(minDim * 0.028, 20) }
+    private var maxWidth: CGFloat { min(minDim * 0.42, 260) }
+    private var padding: CGFloat  { minDim * 0.022 }
+    private var radius: CGFloat   { minDim * 0.028 }
+    private var tailW:  CGFloat   { minDim * 0.030 }
+    private var tailH:  CGFloat   { minDim * 0.028 }
 
     var body: some View {
         // Tail is part of the shape frame — pad bottom so text stays inside body only

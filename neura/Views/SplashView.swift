@@ -36,34 +36,36 @@ struct SplashView: View {
                 }
 
                 // Star — floats up/down, wobbles, completely independent
+                let isLand = geo.size.width > geo.size.height
+                let starFrac: CGFloat = isLand ? 0.52 : 0.38
                 Image("startmascot")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: min(geo.size.width * 0.52, 380))
+                    .frame(width: min(geo.size.width * starFrac, 380))
                     .scaleEffect(starScale)
                     .opacity(starOpacity)
                     .shadow(color: Color(red: 1.0, green: 0.90, blue: 0.40).opacity(0.45),
                             radius: 40, x: 0, y: 10)
                     .position(x: geo.size.width / 2,
-                              y: geo.size.height * 0.38 + floatY)
+                              y: geo.size.height * (isLand ? 0.38 : 0.32) + floatY)
 
                 // Title — fixed position, only opacity animates in
                 VStack(spacing: 12) {
                     Text("NEURA")
-                        .font(.app(size: min(geo.size.width * 0.13, 96)))
+                        .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.13, 96)))
                         .foregroundStyle(Color.appOrange)
                         .shadow(color: Color.appOrange.opacity(0.30),
                                 radius: 8, x: 0, y: 4)
 
                     Text("TAP TO BEGIN!")
-                        .font(.app(size: min(geo.size.width * 0.038, 28)))
+                        .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.038, 28)))
                         .foregroundStyle(Color.appOrange.opacity(0.80))
                         .scaleEffect(tapPulse)
                 }
                 .opacity(titleOpacity)
                 // Hard-coded position — never touches the star's state
                 .position(x: geo.size.width / 2,
-                          y: geo.size.height * 0.80)
+                          y: geo.size.height * (isLand ? 0.80 : 0.72))
             }
             .contentShape(Rectangle())
             .onTapGesture {

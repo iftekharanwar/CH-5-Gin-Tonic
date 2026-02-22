@@ -47,6 +47,7 @@ struct WordPuzzle: Identifiable, Equatable {
 
     static let all: [WordPuzzle] = [
         .make(word: "BAG", modelName: "bag", color: Color(red: 0.95, green: 0.55, blue: 0.20)),
+        .make(word: "BAT", modelName: "bat", color: Color(red: 0.55, green: 0.45, blue: 0.75)),
         .make(word: "CAT", modelName: "cat", color: Color(red: 1.0,  green: 0.45, blue: 0.45)),
         .make(word: "HAT", modelName: "hat", color: Color(red: 0.90, green: 0.38, blue: 0.72)),
         .make(word: "HEN", modelName: "hen", color: Color(red: 0.95, green: 0.65, blue: 0.15)),

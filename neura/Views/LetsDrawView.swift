@@ -22,7 +22,7 @@ struct DrawActivity {
 
     static let all: [DrawActivity] = [
         DrawActivity(imageName: "apple", word: "APPLE"),
-        DrawActivity(imageName: "bat",   word: "BAT"),
+        DrawActivity(imageName: "star",  word: "STAR"),
         DrawActivity(imageName: "book",  word: "BOOK"),
         DrawActivity(imageName: "cup",   word: "CUP"),
         DrawActivity(imageName: "dog",   word: "DOG"),
@@ -51,6 +51,10 @@ struct LetsDrawView: View {
     @State private var hitZonePath: CGPath? = nil
     @State private var outlineSamples: [CGPoint] = []
     @State private var hitSamples: Set<Int> = []
+
+    // Track card size to detect orientation changes
+    @State private var lastCardW: CGFloat = 0
+    @State private var lastCardH: CGFloat = 0
 
     private var activity: DrawActivity { DrawActivity.all[activityIndex] }
 
@@ -83,12 +87,14 @@ struct LetsDrawView: View {
                     .transition(.opacity)
                     .zIndex(2)
                 } else {
+                    let isLand = geo.size.width > geo.size.height
+                    let minDim = min(geo.size.width, geo.size.height)
                     VStack(spacing: 0) {
                         HStack {
                             BackButton { dismiss() }
                             Spacer()
                             // Progress dots
-                            HStack(spacing: geo.size.width * 0.008) {
+                            HStack(spacing: minDim * 0.008) {
                                 ForEach(0..<DrawActivity.all.count, id: \.self) { i in
                                     Circle()
                                         .fill(
@@ -99,14 +105,13 @@ struct LetsDrawView: View {
                                             : Color.appCardBorder
                                         )
                                         .frame(
-                                            width:  i == activityIndex ? geo.size.width * 0.016 : geo.size.width * 0.010,
-                                            height: i == activityIndex ? geo.size.width * 0.016 : geo.size.width * 0.010
+                                            width:  i == activityIndex ? minDim * 0.016 : minDim * 0.010,
+                                            height: i == activityIndex ? minDim * 0.016 : minDim * 0.010
                                         )
                                         .animation(.spring(response: 0.28), value: activityIndex)
                                 }
                             }
                             Spacer()
-                            // Invisible spacer to balance back button
                             Color.clear.frame(width: 44, height: 44)
                         }
                         .padding(.horizontal, geo.size.width * 0.03)
@@ -114,19 +119,22 @@ struct LetsDrawView: View {
 
                         Spacer(minLength: geo.size.height * 0.01)
 
-                        // Reference image above the card — full colour, small
+                        // Reference image — smaller in portrait since canvas needs more room
                         Image(activity.imageName)
                             .resizable()
                             .scaledToFit()
-                            .frame(height: min(geo.size.height * 0.14, 110))
+                            .frame(height: min(
+                                isLand ? geo.size.height * 0.14 : geo.size.height * 0.12,
+                                110
+                            ))
                             .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 3)
 
-                        Spacer(minLength: geo.size.height * 0.015)
+                        Spacer(minLength: geo.size.height * 0.01)
 
                         drawingCard(geo: geo)
                             .padding(.horizontal, geo.size.width * 0.04)
 
-                        Spacer(minLength: geo.size.height * 0.04)
+                        Spacer(minLength: isLand ? geo.size.height * 0.04 : geo.size.height * 0.02)
                     }
                 }
             }
@@ -191,15 +199,17 @@ struct LetsDrawView: View {
         isComplete = false; showReward = false
         outlinePath = nil; hitZonePath = nil
         outlineSamples = []; hitSamples = []
+        lastCardW = 0; lastCardH = 0
     }
 
     // MARK: - Drawing card
 
     @ViewBuilder
     private func drawingCard(geo: GeometryProxy) -> some View {
-        let cardW   = geo.size.width  * 0.92
-        let cardH   = geo.size.height * 0.52
-        let radius  = min(geo.size.width * 0.025, 22)
+        let isLand  = geo.size.width > geo.size.height
+        let cardW   = geo.size.width * 0.92
+        let cardH   = isLand ? geo.size.height * 0.52 : geo.size.height * 0.55
+        let radius  = min(min(geo.size.width, geo.size.height) * 0.025, 22)
 
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -239,7 +249,7 @@ struct LetsDrawView: View {
             // "DRAW!" hint
             if coveragePercent < 0.08 {
                 Text("DRAW!")
-                    .font(.app(size: min(geo.size.width * 0.04, 36)))
+                    .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.05, 36)))
                     .foregroundStyle(Color(red: 0.75, green: 0.62, blue: 0.48).opacity(0.55))
                     .opacity(Double(max(0, 1.0 - coveragePercent / 0.08)))
                     .allowsHitTesting(false)
@@ -256,10 +266,23 @@ struct LetsDrawView: View {
         }
         .frame(width: cardW, height: cardH)
         .onAppear {
+            lastCardW = cardW; lastCardH = cardH
             loadOutline(imgName: activity.imageName, cardW: cardW, cardH: cardH)
         }
-        .onChange(of: activityIndex) { newIndex in
+        .onChange(of: activityIndex) { _, newIndex in
             loadOutline(imgName: DrawActivity.all[newIndex].imageName, cardW: cardW, cardH: cardH)
+        }
+        .onChange(of: geo.size) { _, _ in
+            let newW = geo.size.width * 0.92
+            let newIsLand = geo.size.width > geo.size.height
+            let newH = newIsLand ? geo.size.height * 0.52 : geo.size.height * 0.55
+            if abs(newW - lastCardW) > 2 || abs(newH - lastCardH) > 2 {
+                lastCardW = newW; lastCardH = newH
+                strokes = []; currentPoints = []; hitSamples = []
+                coveragePercent = 0
+                outlinePath = nil; hitZonePath = nil; outlineSamples = []
+                loadOutline(imgName: activity.imageName, cardW: newW, cardH: newH)
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
@@ -533,13 +556,15 @@ private struct RewardView: View {
     }
 
     var body: some View {
+        let minDim = min(geo.size.width, geo.size.height)
+        let isLand = geo.size.width > geo.size.height
         VStack(spacing: geo.size.height * 0.025) {
             Spacer()
             #if os(iOS)
             if hasModel {
                 ModelRealityView(modelName: modelName)
                     .frame(width: geo.size.width * 0.92,
-                           height: geo.size.height * 0.55)
+                           height: isLand ? geo.size.height * 0.55 : geo.size.height * 0.40)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .scaleEffect(modelVisible ? 1.0 : 0.4)
                     .opacity(modelVisible ? 1.0 : 0)
@@ -560,18 +585,18 @@ private struct RewardView: View {
                 .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
             #endif
             Text(word)
-                .font(.app(size: min(geo.size.width * 0.07, 60)))
+                .font(.app(size: min(minDim * 0.10, 60)))
                 .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
                 .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
                 .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.5), value: labelVisible)
             Spacer()
             Button(action: onContinue) {
-                HStack(spacing: geo.size.width * 0.015) {
+                HStack(spacing: minDim * 0.015) {
                     Text(isLastActivity ? "ALL DONE!" : "NEXT DRAWING")
-                        .font(.app(size: min(geo.size.width * 0.025, 22)))
+                        .font(.app(size: min(minDim * 0.035, 22)))
                     if !isLastActivity {
                         Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: min(geo.size.width * 0.025, 22), weight: .bold))
+                            .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
                     }
                 }
                 .foregroundStyle(.white)
@@ -606,12 +631,13 @@ private struct AllDoneView: View {
     @State private var floatY: CGFloat = 0
 
     var body: some View {
+        let minDim = min(geo.size.width, geo.size.height)
         VStack(spacing: geo.size.height * 0.03) {
             Spacer()
             Image("startmascot")
                 .resizable()
                 .scaledToFit()
-                .frame(width: min(geo.size.width * 0.50, 360))
+                .frame(width: min(minDim * 0.55, 360))
                 .scaleEffect(starScale)
                 .opacity(starOpacity)
                 .offset(y: floatY)
@@ -619,12 +645,12 @@ private struct AllDoneView: View {
 
             VStack(spacing: geo.size.height * 0.012) {
                 Text("YOU'RE A STAR!")
-                    .font(.app(size: min(geo.size.width * 0.07, 58)))
+                    .font(.app(size: min(minDim * 0.10, 58)))
                     .foregroundStyle(Color.appOrange)
                     .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
 
                 Text("You drew \(completedCount) picture\(completedCount == 1 ? "" : "s")!")
-                    .font(.app(size: min(geo.size.width * 0.032, 26)))
+                    .font(.app(size: min(minDim * 0.04, 26)))
                     .foregroundStyle(Color(red: 0.45, green: 0.38, blue: 0.28))
             }
             .scaleEffect(labelVisible ? 1.0 : 0.6)
@@ -635,7 +661,7 @@ private struct AllDoneView: View {
 
             Button(action: onDismiss) {
                 Text("GO HOME")
-                    .font(.app(size: min(geo.size.width * 0.025, 22)))
+                    .font(.app(size: min(minDim * 0.035, 22)))
                     .foregroundStyle(.white)
                     .padding(.horizontal, geo.size.width * 0.07)
                     .padding(.vertical, geo.size.height * 0.018)

@@ -70,40 +70,45 @@ struct LearnWordsView: View {
                     .zIndex(2)
                 } else {
                     // ── Main layout ───────────────────────────────────────
+                    let minDim = min(geo.size.width, geo.size.height)
+                    let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
                         topBar(geo: geo)
 
-                        Spacer(minLength: geo.size.height * 0.02)
+                        Spacer(minLength: geo.size.height * 0.01)
 
-                        // Word illustration — scales with screen height, capped
+                        // Word illustration — scales with screen, smaller in portrait
                         Image(puzzle.modelName)
                             .resizable()
                             .scaledToFit()
-                            .frame(height: min(geo.size.height * 0.26, geo.size.width * 0.22))
+                            .frame(height: min(
+                                isLand ? geo.size.height * 0.26 : geo.size.height * 0.18,
+                                minDim * 0.28
+                            ))
 
-                        Spacer(minLength: geo.size.height * 0.03)
+                        Spacer(minLength: geo.size.height * 0.02)
 
                         // Word tiles row: C _ T
                         wordRow(geo: geo)
 
-                        Spacer(minLength: geo.size.height * 0.03)
+                        Spacer(minLength: geo.size.height * 0.02)
 
                         // Hint text
                         Text(isRevealed ? "AMAZING!" : "DRAG THE MISSING LETTER!")
-                            .font(.app(size: min(geo.size.width * 0.022, 20)))
+                            .font(.app(size: min(minDim * 0.028, 20)))
                             .foregroundStyle(
                                 isRevealed
                                 ? Color(red: 0.18, green: 0.62, blue: 0.32)
                                 : Color(red: 0.55, green: 0.42, blue: 0.28)
                             )
                             .animation(.easeInOut(duration: 0.25), value: isRevealed)
-                            .padding(.bottom, geo.size.height * 0.02)
+                            .padding(.bottom, geo.size.height * 0.01)
 
                         // Letter bank
                         letterBank(geo: geo)
-                            .padding(.bottom, geo.size.height * 0.02)
+                            .padding(.bottom, geo.size.height * 0.01)
 
-                        Spacer(minLength: geo.size.height * 0.02)
+                        Spacer(minLength: geo.size.height * 0.01)
                     }
                 }
 
@@ -159,15 +164,16 @@ struct LearnWordsView: View {
     // MARK: - Top bar
 
     private func topBar(geo: GeometryProxy) -> some View {
-        HStack {
+        let minDim = min(geo.size.width, geo.size.height)
+        return HStack {
             BackButton { dismiss() }
             Spacer()
             Text("FILL")
-                .font(.app(size: min(geo.size.width * 0.028, 26)))
+                .font(.app(size: min(minDim * 0.04, 26)))
                 .foregroundStyle(Color.appOrange)
             Spacer()
             // Progress dots
-            HStack(spacing: geo.size.width * 0.008) {
+            HStack(spacing: minDim * 0.008) {
                 ForEach(0..<WordPuzzle.all.count, id: \.self) { i in
                     Circle()
                         .fill(
@@ -177,8 +183,8 @@ struct LearnWordsView: View {
                             ? Color.appOrange
                             : Color.appCardBorder
                         )
-                        .frame(width: i == currentIndex ? geo.size.width * 0.016 : geo.size.width * 0.010,
-                               height: i == currentIndex ? geo.size.width * 0.016 : geo.size.width * 0.010)
+                        .frame(width: i == currentIndex ? minDim * 0.016 : minDim * 0.010,
+                               height: i == currentIndex ? minDim * 0.016 : minDim * 0.010)
                         .animation(.spring(response: 0.28), value: currentIndex)
                 }
             }
@@ -192,8 +198,9 @@ struct LearnWordsView: View {
 
     @ViewBuilder
     private func wordRow(geo: GeometryProxy) -> some View {
-        let tileSize = min(geo.size.width * 0.14, geo.size.height * 0.13)
-        HStack(spacing: geo.size.width * 0.018) {
+        let minDim = min(geo.size.width, geo.size.height)
+        let tileSize = min(minDim * 0.16, 100)
+        HStack(spacing: minDim * 0.02) {
             ForEach(puzzle.letters) { letter in
                 if letter.isBlank {
                     BlankTile(
@@ -216,6 +223,11 @@ struct LearnWordsView: View {
                                         slotFrame = g.frame(in: .global)
                                     }
                                 }
+                                .onChange(of: geo.size) { _, _ in
+                                    DispatchQueue.main.async {
+                                        slotFrame = g.frame(in: .global)
+                                    }
+                                }
                         }
                     )
                 } else {
@@ -233,8 +245,11 @@ struct LearnWordsView: View {
 
     @ViewBuilder
     private func letterBank(geo: GeometryProxy) -> some View {
-        let tileSize = min(geo.size.width * 0.11, geo.size.height * 0.10)
-        HStack(spacing: geo.size.width * 0.012) {
+        let minDim = min(geo.size.width, geo.size.height)
+        let isLand = geo.size.width > geo.size.height
+        let tileSize = min(minDim * 0.12, 80)
+        let spacing = isLand ? geo.size.width * 0.012 : minDim * 0.015
+        HStack(spacing: spacing) {
             ForEach(bankLetters, id: \.self) { letter in
                 FlatTile(
                     letter: letter,
@@ -492,6 +507,8 @@ private struct FillRewardView: View {
     }
 
     var body: some View {
+        let minDim = min(geo.size.width, geo.size.height)
+        let isLand = geo.size.width > geo.size.height
         ZStack {
             Image("background")
                 .resizable()
@@ -506,7 +523,7 @@ private struct FillRewardView: View {
                 if hasModel {
                     FillModelRealityView(modelName: modelName)
                         .frame(width: geo.size.width * 0.92,
-                               height: geo.size.height * 0.55)
+                               height: isLand ? geo.size.height * 0.55 : geo.size.height * 0.40)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .scaleEffect(modelVisible ? 1.0 : 0.4)
                         .opacity(modelVisible ? 1.0 : 0)
@@ -528,7 +545,7 @@ private struct FillRewardView: View {
                 #endif
 
                 Text(word)
-                    .font(.app(size: min(geo.size.width * 0.07, 60)))
+                    .font(.app(size: min(minDim * 0.10, 60)))
                     .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
                     .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
                     .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.5), value: labelVisible)
@@ -536,12 +553,12 @@ private struct FillRewardView: View {
                 Spacer()
 
                 Button(action: onContinue) {
-                    HStack(spacing: geo.size.width * 0.015) {
+                    HStack(spacing: minDim * 0.015) {
                         Text(isLastWord ? "ALL DONE!" : "NEXT WORD")
-                            .font(.app(size: min(geo.size.width * 0.025, 22)))
+                            .font(.app(size: min(minDim * 0.035, 22)))
                         if !isLastWord {
                             Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: min(geo.size.width * 0.025, 22), weight: .bold))
+                                .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
                         }
                     }
                     .foregroundStyle(.white)
@@ -680,6 +697,7 @@ private struct FillAllDoneView: View {
     @State private var floatY: CGFloat = 0
 
     var body: some View {
+        let minDim = min(geo.size.width, geo.size.height)
         ZStack {
             Image("background")
                 .resizable()
@@ -693,7 +711,7 @@ private struct FillAllDoneView: View {
                 Image("startmascot")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: min(geo.size.width * 0.50, 360))
+                    .frame(width: min(minDim * 0.55, 360))
                     .scaleEffect(starScale)
                     .opacity(starOpacity)
                     .offset(y: floatY)
@@ -701,12 +719,12 @@ private struct FillAllDoneView: View {
 
                 VStack(spacing: geo.size.height * 0.012) {
                     Text("AMAZING!")
-                        .font(.app(size: min(geo.size.width * 0.07, 58)))
+                        .font(.app(size: min(minDim * 0.10, 58)))
                         .foregroundStyle(Color.appOrange)
                         .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
 
                     Text("You filled \(completedCount) word\(completedCount == 1 ? "" : "s")!")
-                        .font(.app(size: min(geo.size.width * 0.032, 26)))
+                        .font(.app(size: min(minDim * 0.04, 26)))
                         .foregroundStyle(Color(red: 0.45, green: 0.38, blue: 0.28))
                 }
                 .scaleEffect(labelVisible ? 1.0 : 0.6)
@@ -717,7 +735,7 @@ private struct FillAllDoneView: View {
 
                 Button(action: onDismiss) {
                     Text("GO HOME")
-                        .font(.app(size: min(geo.size.width * 0.025, 22)))
+                        .font(.app(size: min(minDim * 0.035, 22)))
                         .foregroundStyle(.white)
                         .padding(.horizontal, geo.size.width * 0.07)
                         .padding(.vertical, geo.size.height * 0.018)
