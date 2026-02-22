@@ -39,4 +39,41 @@ final class SoundPlayer {
         if player.isPlaying { player.currentTime = 0 }
         player.play()
     }
+
+    // MARK: - Background music
+
+    private var bgPlayer: AVAudioPlayer?
+    private(set) var isMusicPlaying = false
+
+    func startBackgroundMusic() {
+        guard bgPlayer == nil || !(bgPlayer?.isPlaying ?? false) else { return }
+        guard let url = Bundle.main.url(forResource: "bgmusic", withExtension: "mp3") else {
+            print("[SoundPlayer] missing bgmusic.mp3")
+            return
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.numberOfLoops = -1
+            player.volume = 0.25
+            player.prepareToPlay()
+            player.play()
+            bgPlayer = player
+            isMusicPlaying = true
+        } catch {
+            print("[SoundPlayer] failed to load bgmusic: \(error)")
+        }
+    }
+
+    func stopBackgroundMusic() {
+        bgPlayer?.stop()
+        isMusicPlaying = false
+    }
+
+    func toggleMusic() {
+        if isMusicPlaying {
+            stopBackgroundMusic()
+        } else {
+            startBackgroundMusic()
+        }
+    }
 }

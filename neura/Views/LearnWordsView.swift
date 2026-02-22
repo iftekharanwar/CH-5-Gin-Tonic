@@ -35,6 +35,11 @@ struct LearnWordsView: View {
 
     @State private var mascotVisible = false
     @State private var mascotBounce: CGFloat = 0
+    @State private var mascotSpeech: String? = nil
+    @State private var showMascotSpeech = false
+    @State private var wrongCount = 0
+    @State private var earnedStars = 0
+    @State private var sparkleOrigin: CGPoint? = nil
 
     private var puzzle: WordPuzzle { WordPuzzle.all[currentIndex] }
     private var isLastWord: Bool { currentIndex == WordPuzzle.all.count - 1 }
@@ -62,6 +67,7 @@ struct LearnWordsView: View {
                         word: puzzle.word,
                         imageName: puzzle.modelName,
                         modelName: puzzle.modelName,
+                        stars: earnedStars,
                         geo: geo,
                         isLastWord: isLastWord
                     ) {
@@ -111,17 +117,19 @@ struct LearnWordsView: View {
                 if mascotVisible && !showReward && !showAllDone {
                     let minDim2 = min(geo.size.width, geo.size.height)
                     let starSize = minDim2 * 0.14
-                    Image("startmascot")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: starSize)
-                        .offset(y: mascotBounce)
-                        .position(
-                            x: geo.size.width - starSize * 0.45,
-                            y: geo.size.height - starSize * 0.20
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .allowsHitTesting(false)
+                    MascotView(
+                        size: starSize,
+                        speechText: mascotSpeech,
+                        showSpeech: showMascotSpeech,
+                        tailDirection: .right,
+                        bounce: mascotBounce
+                    )
+                    .position(
+                        x: geo.size.width - starSize * 0.45,
+                        y: geo.size.height - starSize * 0.20
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
                 }
 
                 if let d = drag {
@@ -130,6 +138,12 @@ struct LearnWordsView: View {
                         .position(d.position)
                         .allowsHitTesting(false)
                         .zIndex(99)
+                }
+
+                if let origin = sparkleOrigin {
+                    SparkleParticleView(origin: origin)
+                        .allowsHitTesting(false)
+                        .zIndex(98)
                 }
 
                 if showAllDone {
@@ -154,6 +168,10 @@ struct LearnWordsView: View {
             showReward = false
             isRevealed = false
             puzzleState = .idle
+            wrongCount = 0
+            mascotSpeech = nil
+            showMascotSpeech = false
+            sparkleOrigin = nil
             bankLetters = Self.makeBankLetters(for: puzzle)
         }
         .onAppear {
@@ -167,6 +185,9 @@ struct LearnWordsView: View {
                 currentIndex = savedCount
             }
             bankLetters = Self.makeBankLetters(for: puzzle)
+            #if os(iOS)
+            ModelCache.shared.preload(puzzle.modelName)
+            #endif
         }
     }
 
@@ -265,6 +286,13 @@ struct LearnWordsView: View {
                     size: tileSize,
                     dimmed: isRevealed || drag?.letter == letter
                 )
+                .overlay(
+                    Group {
+                        if wrongCount >= 3 && letter == puzzle.missingLetter && !isRevealed {
+                            HintGlowOverlay(size: tileSize)
+                        }
+                    }
+                )
                 .gesture(
                     DragGesture(minimumDistance: 0, coordinateSpace: .global)
                         .onChanged { value in
@@ -313,10 +341,16 @@ struct LearnWordsView: View {
         if letter == puzzle.missingLetter {
             SoundPlayer.shared.play(.pop)
             puzzleState = .correct
+            earnedStars = AchievementStore.fillStars(wrongCount: wrongCount)
+            AchievementStore.shared.setStars(activity: puzzle.modelName, type: "fill", stars: earnedStars)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
                 isRevealed = true
             }
             bounceMascot(height: -25)
+            showMascotMessage("Yes! That's right!")
+            speaker.speak("Yes! That's right!")
+            sparkleOrigin = CGPoint(x: slotFrame.midX, y: slotFrame.midY)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { sparkleOrigin = nil }
             #if os(iOS)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
@@ -333,7 +367,16 @@ struct LearnWordsView: View {
         } else {
             SoundPlayer.shared.play(.wrong)
             puzzleState = .wrong
+            wrongCount += 1
             bounceMascot(height: -8)
+            if wrongCount >= 3 {
+                let hintMsg = "Look for the \(String(puzzle.missingLetter))!"
+                showMascotMessage(hintMsg)
+                speaker.speak(hintMsg)
+            } else {
+                showMascotMessage("Try again!")
+                speaker.speak("Try again!")
+            }
             #if os(iOS)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             #endif
@@ -347,6 +390,18 @@ struct LearnWordsView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
                 mascotBounce = 0
+            }
+        }
+    }
+
+    private func showMascotMessage(_ text: String) {
+        mascotSpeech = text
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+            showMascotSpeech = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showMascotSpeech = false
             }
         }
     }
@@ -389,6 +444,23 @@ struct LearnWordsView: View {
         case "Y": return Color(red: 0.85, green: 0.70, blue: 0.10)
         default:  return Color(red: 0.40, green: 0.35, blue: 0.30)
         }
+    }
+}
+
+// MARK: - Hint glow overlay
+
+private struct HintGlowOverlay: View {
+    let size: CGFloat
+    @State private var glowing = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
+            .fill(Color(red: 1.0, green: 0.82, blue: 0.0).opacity(glowing ? 0.55 : 0.20))
+            .blur(radius: 8)
+            .scaleEffect(glowing ? 1.12 : 1.0)
+            .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: glowing)
+            .onAppear { glowing = true }
+            .allowsHitTesting(false)
     }
 }
 
@@ -533,6 +605,7 @@ private struct FillRewardView: View {
     let word: String
     let imageName: String
     let modelName: String
+    let stars: Int
     let geo: GeometryProxy
     let isLastWord: Bool
     let onContinue: () -> Void
@@ -559,7 +632,7 @@ private struct FillRewardView: View {
                 Spacer()
                 #if os(iOS)
                 if hasModel {
-                    FillModelRealityView(modelName: modelName)
+                    SharedModelView(modelName: modelName)
                         .frame(width: geo.size.width * 0.92,
                                height: isLand ? geo.size.height * 0.55 : geo.size.height * 0.40)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -581,6 +654,10 @@ private struct FillRewardView: View {
                     .scaleEffect(modelVisible ? 1.0 : 0.4).opacity(modelVisible ? 1.0 : 0)
                     .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
                 #endif
+
+                StarRatingView(stars: stars, size: min(minDim * 0.065, 40))
+                    .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.4), value: labelVisible)
 
                 Text(word)
                     .font(.app(size: min(minDim * 0.10, 60)))
@@ -611,6 +688,10 @@ private struct FillRewardView: View {
                 .padding(.bottom, geo.size.height * 0.06)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+
+            ConfettiView()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .allowsHitTesting(false)
         }
         .onAppear {
             SoundPlayer.shared.play(.reward)
@@ -618,106 +699,6 @@ private struct FillRewardView: View {
         }
     }
 }
-
-// MARK: - RealityKit 3D model for Fill reward
-
-#if os(iOS)
-private struct FillModelRealityView: UIViewRepresentable {
-    let modelName: String
-
-    func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
-        arView.backgroundColor = .clear
-        arView.environment.background = .color(.clear)
-        arView.environment.lighting.intensityExponent = 1.5
-
-        guard let url = Bundle.main.url(forResource: modelName, withExtension: "usdz"),
-              let model = try? Entity.load(contentsOf: url) else { return arView }
-        let anchor = AnchorEntity(world: .zero)
-        anchor.addChild(model); arView.scene.addAnchor(anchor)
-        let bounds = model.visualBounds(relativeTo: nil)
-        let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
-        let baseScale = maxDim > 0 ? Float(0.35 / maxDim) : 1.0
-        model.scale    = SIMD3<Float>(repeating: baseScale)
-        model.position = SIMD3<Float>(-bounds.center.x*baseScale, -bounds.center.y*baseScale, -0.45)
-
-        let coord = context.coordinator
-        coord.modelEntity = model
-        coord.baseScale = baseScale
-
-        var elapsed: Float = 0
-        arView.scene.subscribe(to: SceneEvents.Update.self) { ev in
-            guard !coord.isTouching else { return }
-            elapsed += Float(ev.deltaTime) * 0.35
-            model.transform.rotation = simd_quatf(angle: elapsed, axis: [0, 1, 0])
-        }.store(in: &coord.bag)
-
-        let cam = PerspectiveCamera(); cam.camera.fieldOfViewInDegrees = 28
-        let camAnchor = AnchorEntity(world: [0, 0, 0.55]); camAnchor.addChild(cam)
-        arView.scene.addAnchor(camAnchor)
-
-        let pan = UIPanGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePan(_:)))
-        arView.addGestureRecognizer(pan)
-
-        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePinch(_:)))
-        arView.addGestureRecognizer(pinch)
-
-        return arView
-    }
-    func updateUIView(_ uiView: ARView, context: Context) {}
-    func makeCoordinator() -> FillCoordinator { FillCoordinator() }
-}
-
-class FillCoordinator: NSObject {
-    var bag = Set<AnyCancellable>()
-    var modelEntity: Entity?
-    var baseScale: Float = 1.0
-    var isTouching = false
-
-    private var rotationX: Float = 0
-    private var rotationY: Float = 0
-    private var currentZoom: Float = 1.0
-
-    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard let model = modelEntity else { return }
-        switch gesture.state {
-        case .began:
-            isTouching = true
-        case .changed:
-            let translation = gesture.translation(in: gesture.view)
-            rotationY += Float(translation.x) * 0.008
-            rotationX += Float(translation.y) * 0.008
-            rotationX = min(max(rotationX, -.pi / 3), .pi / 3)
-            let qX = simd_quatf(angle: rotationX, axis: [1, 0, 0])
-            let qY = simd_quatf(angle: rotationY, axis: [0, 1, 0])
-            model.transform.rotation = qY * qX
-            gesture.setTranslation(.zero, in: gesture.view)
-        case .ended, .cancelled:
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.isTouching = false
-            }
-        default: break
-        }
-    }
-
-    @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        guard let model = modelEntity else { return }
-        switch gesture.state {
-        case .began:
-            isTouching = true
-        case .changed:
-            currentZoom = min(max(Float(gesture.scale) * currentZoom, 0.5), 3.0)
-            model.scale = SIMD3<Float>(repeating: baseScale * currentZoom)
-            gesture.scale = 1.0
-        case .ended, .cancelled:
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.isTouching = false
-            }
-        default: break
-        }
-    }
-}
-#endif
 
 // MARK: - All Done celebration
 
@@ -783,6 +764,10 @@ private struct FillAllDoneView: View {
                 .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.8), value: labelVisible)
                 .padding(.bottom, geo.size.height * 0.07)
             }
+
+            ConfettiView()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .allowsHitTesting(false)
         }
         .frame(width: geo.size.width, height: geo.size.height)
         .onAppear {

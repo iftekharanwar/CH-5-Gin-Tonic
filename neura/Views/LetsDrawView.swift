@@ -40,10 +40,20 @@ struct LetsDrawView: View {
     @State private var showAllDone = false
 
     @State private var strokes: [[CGPoint]] = []
+    @State private var strokeColors: [Color] = []
     @State private var currentPoints: [CGPoint] = []
     @State private var coveragePercent: CGFloat = 0
     @State private var isComplete = false
     @State private var showReward = false
+    @State private var selectedColor: Color = Color(red: 0.85, green: 0.28, blue: 0.28)
+
+    private static let presetColors: [Color] = [
+        Color(red: 0.85, green: 0.28, blue: 0.28),
+        Color(red: 0.20, green: 0.50, blue: 0.85),
+        Color(red: 0.18, green: 0.65, blue: 0.35),
+        Color(red: 0.90, green: 0.55, blue: 0.10),
+        Color(red: 0.60, green: 0.30, blue: 0.70),
+    ]
 
     @State private var outlinePath: CGPath? = nil
     @State private var hitZonePath: CGPath? = nil
@@ -56,6 +66,9 @@ struct LetsDrawView: View {
     @State private var mascotVisible = false
     @State private var mascotBounce: CGFloat = 0
     @State private var lastMilestone = 0
+    @State private var mascotSpeech: String? = nil
+    @State private var showMascotSpeech = false
+    @State private var earnedStars = 0
 
     private var activity: DrawActivity { DrawActivity.all[activityIndex] }
 
@@ -80,6 +93,7 @@ struct LetsDrawView: View {
                         word: activity.word,
                         imageName: activity.imageName,
                         modelName: activity.modelName,
+                        stars: earnedStars,
                         geo: geo,
                         isLastActivity: activityIndex == DrawActivity.all.count - 1
                     ) {
@@ -128,7 +142,11 @@ struct LetsDrawView: View {
                             ))
                             .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 3)
 
-                        Spacer(minLength: geo.size.height * 0.01)
+                        Spacer(minLength: geo.size.height * 0.005)
+
+                        drawToolbar(geo: geo)
+
+                        Spacer(minLength: geo.size.height * 0.005)
 
                         drawingCard(geo: geo)
                             .padding(.horizontal, geo.size.width * 0.04)
@@ -138,17 +156,19 @@ struct LetsDrawView: View {
 
                     if mascotVisible {
                         let starSize = minDim * 0.14
-                        Image("startmascot")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: starSize)
-                            .offset(y: mascotBounce)
-                            .position(
-                                x: geo.size.width - starSize * 0.45,
-                                y: geo.size.height - starSize * 0.20
-                            )
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .allowsHitTesting(false)
+                        MascotView(
+                            size: starSize,
+                            speechText: mascotSpeech,
+                            showSpeech: showMascotSpeech,
+                            tailDirection: .right,
+                            bounce: mascotBounce
+                        )
+                        .position(
+                            x: geo.size.width - starSize * 0.45,
+                            y: geo.size.height - starSize * 0.20
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .allowsHitTesting(false)
                     }
                 }
             }
@@ -165,6 +185,9 @@ struct LetsDrawView: View {
                 completedCount = savedCount
                 activityIndex = savedCount
             }
+            #if os(iOS)
+            ModelCache.shared.preload(activity.modelName)
+            #endif
         }
     }
 
@@ -207,12 +230,105 @@ struct LetsDrawView: View {
     }
 
     private func resetRound() {
-        strokes = []; currentPoints = []; coveragePercent = 0
+        strokes = []; strokeColors = []; currentPoints = []; coveragePercent = 0
         isComplete = false; showReward = false
         outlinePath = nil; hitZonePath = nil
         outlineSamples = []; hitSamples = []
         lastCardW = 0; lastCardH = 0
         mascotVisible = false; mascotBounce = 0; lastMilestone = 0
+        mascotSpeech = nil; showMascotSpeech = false
+        selectedColor = Self.presetColors[0]
+    }
+
+    private func showMascotMessage(_ text: String) {
+        mascotSpeech = text
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+            showMascotSpeech = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showMascotSpeech = false
+            }
+        }
+    }
+
+    // MARK: - Draw toolbar
+
+    @ViewBuilder
+    private func drawToolbar(geo: GeometryProxy) -> some View {
+        let minDim = min(geo.size.width, geo.size.height)
+        let dotSize: CGFloat = min(minDim * 0.05, 34)
+        HStack(spacing: minDim * 0.02) {
+            ForEach(Self.presetColors, id: \.self) { color in
+                Circle()
+                    .fill(color)
+                    .frame(width: dotSize, height: dotSize)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.white, lineWidth: selectedColor == color ? 3 : 0)
+                    )
+                    .shadow(color: selectedColor == color ? color.opacity(0.6) : .clear, radius: 6)
+                    .scaleEffect(selectedColor == color ? 1.15 : 1.0)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: selectedColor)
+                    .onTapGesture {
+                        selectedColor = color
+                        SoundPlayer.shared.play(.tap)
+                    }
+            }
+
+            Spacer().frame(width: minDim * 0.02)
+
+            Button {
+                undoLastStroke()
+            } label: {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: dotSize * 0.85, weight: .bold))
+                    .foregroundStyle(strokes.isEmpty ? Color.gray.opacity(0.4) : Color(red: 0.52, green: 0.30, blue: 0.10))
+            }
+            .buttonStyle(.plain)
+            .disabled(strokes.isEmpty || isComplete)
+        }
+        .padding(.horizontal, geo.size.width * 0.06)
+    }
+
+    private func undoLastStroke() {
+        guard !strokes.isEmpty else { return }
+        strokes.removeLast()
+        strokeColors.removeLast()
+        recalculateCoverage()
+        SoundPlayer.shared.play(.pop)
+    }
+
+    private func recalculateCoverage() {
+        hitSamples.removeAll()
+        guard let zone = hitZonePath, !outlineSamples.isEmpty else {
+            coveragePercent = 0; return
+        }
+        for pts in strokes {
+            for pt in pts {
+                guard zone.contains(pt) else { continue }
+                checkPointSilent(pt)
+            }
+        }
+        coveragePercent = outlineSamples.isEmpty ? 0 : CGFloat(hitSamples.count) / CGFloat(outlineSamples.count)
+        let milestone = Int(coveragePercent * 100) / 25
+        lastMilestone = milestone
+        isComplete = coveragePercent >= 0.88
+    }
+
+    private func checkPointSilent(_ pt: CGPoint) {
+        guard !outlineSamples.isEmpty else { return }
+        var nearest = -1
+        var bestDist = CGFloat.greatestFiniteMagnitude
+        for (i, sample) in outlineSamples.enumerated() {
+            guard !hitSamples.contains(i) else { continue }
+            let dx = pt.x - sample.x, dy = pt.y - sample.y
+            let d = dx*dx + dy*dy
+            if d < bestDist { bestDist = d; nearest = i }
+        }
+        if nearest >= 0 && bestDist < 16*16 {
+            hitSamples.insert(nearest)
+        }
     }
 
     // MARK: - Drawing card
@@ -240,18 +356,17 @@ struct LetsDrawView: View {
 
             Canvas { ctx, _ in
                 let style = StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round)
-                let color = GraphicsContext.Shading.color(
-                    Color(red: 0.85, green: 0.28, blue: 0.28).opacity(0.85))
-                for pts in strokes {
+                for (idx, pts) in strokes.enumerated() {
                     guard pts.count > 1 else { continue }
+                    let c = idx < strokeColors.count ? strokeColors[idx] : Self.presetColors[0]
                     var path = Path(); path.move(to: pts[0])
                     pts.dropFirst().forEach { path.addLine(to: $0) }
-                    ctx.stroke(path, with: color, style: style)
+                    ctx.stroke(path, with: .color(c.opacity(0.85)), style: style)
                 }
                 if currentPoints.count > 1 {
                     var path = Path(); path.move(to: currentPoints[0])
                     currentPoints.dropFirst().forEach { path.addLine(to: $0) }
-                    ctx.stroke(path, with: color, style: style)
+                    ctx.stroke(path, with: .color(selectedColor.opacity(0.85)), style: style)
                 }
             }
             .frame(width: cardW, height: cardH)
@@ -287,7 +402,7 @@ struct LetsDrawView: View {
             let newH = newIsLand ? geo.size.height * 0.52 : geo.size.height * 0.55
             if abs(newW - lastCardW) > 2 || abs(newH - lastCardH) > 2 {
                 lastCardW = newW; lastCardH = newH
-                strokes = []; currentPoints = []; hitSamples = []
+                strokes = []; strokeColors = []; currentPoints = []; hitSamples = []
                 coveragePercent = 0
                 outlinePath = nil; hitZonePath = nil; outlineSamples = []
                 loadOutline(imgName: activity.imageName, cardW: newW, cardH: newH)
@@ -307,7 +422,10 @@ struct LetsDrawView: View {
                 }
                 .onEnded { _ in
                     guard !isComplete else { return }
-                    if !currentPoints.isEmpty { strokes.append(currentPoints) }
+                    if !currentPoints.isEmpty {
+                        strokes.append(currentPoints)
+                        strokeColors.append(selectedColor)
+                    }
                     currentPoints = []
                 }
         )
@@ -347,14 +465,22 @@ struct LetsDrawView: View {
                         mascotBounce = 0
                     }
                 }
+                let milestoneMessages = ["Keep going!", "Halfway there!", "Almost done!"]
+                let msg = milestoneMessages[min(milestone - 1, 2)]
+                showMascotMessage(msg)
+                speaker.speak(msg)
             }
 
             if pct >= 0.88 && !isComplete {
                 isComplete = true
+                earnedStars = AchievementStore.drawStars(coverage: pct)
+                AchievementStore.shared.setStars(activity: activity.imageName, type: "draw", stars: earnedStars)
                 SoundPlayer.shared.play(.success)
                 #if os(iOS)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 #endif
+                let doneMsg = "Amazing! You drew a \(activity.word.lowercased())!"
+                showMascotMessage(doneMsg)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     speaker.spellThenSpeak(activity.word)
                 }
@@ -560,6 +686,7 @@ private struct RewardView: View {
     let word: String
     let imageName: String
     let modelName: String
+    let stars: Int
     let geo: GeometryProxy
     let isLastActivity: Bool
     let onContinue: () -> Void
@@ -573,11 +700,12 @@ private struct RewardView: View {
     var body: some View {
         let minDim = min(geo.size.width, geo.size.height)
         let isLand = geo.size.width > geo.size.height
+        ZStack {
         VStack(spacing: geo.size.height * 0.025) {
             Spacer()
             #if os(iOS)
             if hasModel {
-                ModelRealityView(modelName: modelName)
+                SharedModelView(modelName: modelName)
                     .frame(width: geo.size.width * 0.92,
                            height: isLand ? geo.size.height * 0.55 : geo.size.height * 0.40)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -599,6 +727,9 @@ private struct RewardView: View {
                 .scaleEffect(modelVisible ? 1.0 : 0.4).opacity(modelVisible ? 1.0 : 0)
                 .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
             #endif
+            StarRatingView(stars: stars, size: min(minDim * 0.065, 40))
+                .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.4), value: labelVisible)
             Text(word)
                 .font(.app(size: min(minDim * 0.10, 60)))
                 .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
@@ -626,6 +757,11 @@ private struct RewardView: View {
             .padding(.bottom, geo.size.height * 0.06)
         }
         .frame(width: geo.size.width, height: geo.size.height)
+
+            ConfettiView()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .allowsHitTesting(false)
+        }
         .onAppear {
             SoundPlayer.shared.play(.reward)
             modelVisible = true; labelVisible = true
@@ -647,6 +783,7 @@ private struct AllDoneView: View {
 
     var body: some View {
         let minDim = min(geo.size.width, geo.size.height)
+        ZStack {
         VStack(spacing: geo.size.height * 0.03) {
             Spacer()
             Image("startmascot")
@@ -690,6 +827,11 @@ private struct AllDoneView: View {
             .padding(.bottom, geo.size.height * 0.07)
         }
         .frame(width: geo.size.width, height: geo.size.height)
+
+            ConfettiView()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .allowsHitTesting(false)
+        }
         .onAppear {
             SoundPlayer.shared.play(.reward)
             withAnimation(.spring(response: 0.65, dampingFraction: 0.55).delay(0.1)) {
@@ -700,103 +842,3 @@ private struct AllDoneView: View {
         }
     }
 }
-
-// MARK: - RealityKit 3D model
-
-#if os(iOS)
-private struct ModelRealityView: UIViewRepresentable {
-    let modelName: String
-
-    func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
-        arView.backgroundColor = .clear
-        arView.environment.background = .color(.clear)
-        arView.environment.lighting.intensityExponent = 1.5
-
-        guard let url = Bundle.main.url(forResource: modelName, withExtension: "usdz"),
-              let model = try? Entity.load(contentsOf: url) else { return arView }
-        let anchor = AnchorEntity(world: .zero)
-        anchor.addChild(model); arView.scene.addAnchor(anchor)
-        let bounds = model.visualBounds(relativeTo: nil)
-        let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
-        let baseScale = maxDim > 0 ? Float(0.35 / maxDim) : 1.0
-        model.scale    = SIMD3<Float>(repeating: baseScale)
-        model.position = SIMD3<Float>(-bounds.center.x*baseScale, -bounds.center.y*baseScale, -0.45)
-
-        let coord = context.coordinator
-        coord.modelEntity = model
-        coord.baseScale = baseScale
-
-        var elapsed: Float = 0
-        arView.scene.subscribe(to: SceneEvents.Update.self) { ev in
-            guard !coord.isTouching else { return }
-            elapsed += Float(ev.deltaTime) * 0.35
-            model.transform.rotation = simd_quatf(angle: elapsed, axis: [0, 1, 0])
-        }.store(in: &coord.bag)
-
-        let cam = PerspectiveCamera(); cam.camera.fieldOfViewInDegrees = 28
-        let camAnchor = AnchorEntity(world: [0, 0, 0.55]); camAnchor.addChild(cam)
-        arView.scene.addAnchor(camAnchor)
-
-        let pan = UIPanGestureRecognizer(target: coord, action: #selector(Coordinator.handlePan(_:)))
-        arView.addGestureRecognizer(pan)
-
-        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(Coordinator.handlePinch(_:)))
-        arView.addGestureRecognizer(pinch)
-
-        return arView
-    }
-    func updateUIView(_ uiView: ARView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator: NSObject {
-        var bag = Set<AnyCancellable>()
-        var modelEntity: Entity?
-        var baseScale: Float = 1.0
-        var isTouching = false
-
-        private var rotationX: Float = 0
-        private var rotationY: Float = 0
-        private var currentZoom: Float = 1.0
-
-        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let model = modelEntity else { return }
-            switch gesture.state {
-            case .began:
-                isTouching = true
-            case .changed:
-                let translation = gesture.translation(in: gesture.view)
-                rotationY += Float(translation.x) * 0.008
-                rotationX += Float(translation.y) * 0.008
-                rotationX = min(max(rotationX, -.pi / 3), .pi / 3)
-                let qX = simd_quatf(angle: rotationX, axis: [1, 0, 0])
-                let qY = simd_quatf(angle: rotationY, axis: [0, 1, 0])
-                model.transform.rotation = qY * qX
-                gesture.setTranslation(.zero, in: gesture.view)
-            case .ended, .cancelled:
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                    self?.isTouching = false
-                }
-            default: break
-            }
-        }
-
-        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            guard let model = modelEntity else { return }
-            switch gesture.state {
-            case .began:
-                isTouching = true
-            case .changed:
-                currentZoom = min(max(Float(gesture.scale) * currentZoom, 0.5), 3.0)
-                model.scale = SIMD3<Float>(repeating: baseScale * currentZoom)
-                gesture.scale = 1.0
-            case .ended, .cancelled:
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                    self?.isTouching = false
-                }
-            default: break
-            }
-        }
-    }
-}
-#endif

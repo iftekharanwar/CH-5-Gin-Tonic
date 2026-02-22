@@ -4,6 +4,8 @@ struct SplashView: View {
 
     var onFinished: () -> Void
 
+    @StateObject private var speaker = WordSpeaker()
+
     @State private var floatY:      CGFloat = 0
     @State private var starScale:   CGFloat = 0.6
     @State private var starOpacity: Double  = 0
@@ -13,6 +15,7 @@ struct SplashView: View {
 
     @State private var tapPulse: CGFloat = 1.0
     @State private var sparkles: [SparkleData] = SparkleData.generate()
+    @State private var showGreeting = false
 
     var body: some View {
         GeometryReader { geo in
@@ -30,16 +33,29 @@ struct SplashView: View {
 
                 let isLand = geo.size.width > geo.size.height
                 let starFrac: CGFloat = isLand ? 0.52 : 0.38
-                Image("startmascot")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: min(geo.size.width * starFrac, 380))
-                    .scaleEffect(starScale)
-                    .opacity(starOpacity)
-                    .shadow(color: Color(red: 1.0, green: 0.90, blue: 0.40).opacity(0.45),
-                            radius: 40, x: 0, y: 10)
-                    .position(x: geo.size.width / 2,
-                              y: geo.size.height * (isLand ? 0.38 : 0.32) + floatY)
+                let mascotW = min(geo.size.width * starFrac, 380)
+                ZStack {
+                    Image("startmascot")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: mascotW)
+                        .scaleEffect(starScale)
+                        .opacity(starOpacity)
+                        .shadow(color: Color(red: 1.0, green: 0.90, blue: 0.40).opacity(0.45),
+                                radius: 40, x: 0, y: 10)
+
+                    if showGreeting {
+                        MascotSpeechBubble(
+                            text: "Welcome to Neura!",
+                            fontSize: min(min(geo.size.width, geo.size.height) * 0.032, 22),
+                            maxWidth: 200
+                        )
+                        .offset(x: mascotW * 0.38, y: -mascotW * 0.42)
+                        .transition(.scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
+                    }
+                }
+                .position(x: geo.size.width / 2,
+                          y: geo.size.height * (isLand ? 0.38 : 0.32) + floatY)
 
                 VStack(spacing: 12) {
                     Text("NEURA")
@@ -90,6 +106,13 @@ struct SplashView: View {
 
         withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true).delay(1.3)) {
             tapPulse = 1.08
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                showGreeting = true
+            }
+            speaker.speak("Welcome to Neura!")
         }
     }
 }

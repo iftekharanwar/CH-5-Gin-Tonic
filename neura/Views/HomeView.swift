@@ -6,11 +6,16 @@ struct HomeView: View {
     @AppStorage("fillCompletedCount") private var fillCompleted = 0
 
     @State private var navigateTo: HomeDestination? = nil
+    @StateObject private var speaker = WordSpeaker()
+
     @State private var cardsVisible  = false
     @State private var mascotVisible = false
     @State private var bubbleVisible = false
     @State private var bubbleText = ""
     @State private var hasAppeared   = false
+    @State private var mascotScale: CGFloat = 1.0
+    @State private var mascotFlipY: Double = 0
+    @State private var musicOn = false
 
     var body: some View {
         NavigationStack {
@@ -26,11 +31,27 @@ struct HomeView: View {
 
                     let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
-                        Text("neura")
-                            .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
-                            .foregroundStyle(Color.appOrange)
-                            .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
-                            .padding(.top, geo.size.height * (isLand ? 0.07 : 0.05))
+                        ZStack(alignment: .topTrailing) {
+                            Text("neura")
+                                .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
+                                .foregroundStyle(Color.appOrange)
+                                .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
+                                .frame(maxWidth: .infinity)
+
+                            Button {
+                                musicOn.toggle()
+                                SoundPlayer.shared.toggleMusic()
+                            } label: {
+                                Image(systemName: musicOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundStyle(Color.appOrange.opacity(0.7))
+                                    .padding(10)
+                                    .background(Circle().fill(Color.white.opacity(0.5)))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
+                        }
+                        .padding(.top, geo.size.height * (isLand ? 0.07 : 0.05))
 
                         Spacer()
 
@@ -51,16 +72,23 @@ struct HomeView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(width: starSize)
+                            .scaleEffect(mascotScale)
+                            .rotation3DEffect(.degrees(mascotFlipY), axis: (x: 0, y: 1, z: 0))
                             .position(x: starCX, y: starCY)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
 
                         if bubbleVisible {
-                            SpeechBubble(text: bubbleText, geo: geo)
-                                .position(
-                                    x: starCX + geo.size.width * 0.12,
-                                    y: starCY - starSize * 0.90
-                                )
-                                .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
+                            MascotSpeechBubble(
+                                text: bubbleText,
+                                fontSize: min(minDim * 0.028, 20),
+                                tailDirection: .left,
+                                maxWidth: min(minDim * 0.42, 260)
+                            )
+                            .position(
+                                x: starCX + geo.size.width * 0.12,
+                                y: starCY - starSize * 0.90
+                            )
+                            .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                         }
                     }
                 }
@@ -106,10 +134,12 @@ struct HomeView: View {
                 Spacer(minLength: 0)
                 activityCardView(title: "DRAW", imageName: "drawasset",
                                  progress: drawCompleted, total: DrawActivity.all.count,
+                                 starType: "draw",
                                  mascotText: "Let's draw! Pick up your brush!",
                                  destination: .draw, delay: 0.05, geo: geo)
                 activityCardView(title: "FILL", imageName: "fillwords",
                                  progress: fillCompleted, total: WordPuzzle.all.count,
+                                 starType: "fill",
                                  mascotText: "Let's fill in the letters! You can do it!",
                                  destination: .fill, delay: 0.18, geo: geo)
                 Spacer(minLength: 0)
@@ -118,10 +148,12 @@ struct HomeView: View {
             VStack(spacing: geo.size.height * 0.025) {
                 activityCardView(title: "DRAW", imageName: "drawasset",
                                  progress: drawCompleted, total: DrawActivity.all.count,
+                                 starType: "draw",
                                  mascotText: "Let's draw! Pick up your brush!",
                                  destination: .draw, delay: 0.05, geo: geo)
                 activityCardView(title: "FILL", imageName: "fillwords",
                                  progress: fillCompleted, total: WordPuzzle.all.count,
+                                 starType: "fill",
                                  mascotText: "Let's fill in the letters! You can do it!",
                                  destination: .fill, delay: 0.18, geo: geo)
             }
@@ -130,12 +162,15 @@ struct HomeView: View {
 
     private func activityCardView(title: String, imageName: String,
                                    progress: Int, total: Int,
+                                   starType: String,
                                    mascotText: String, destination: HomeDestination,
                                    delay: Double, geo: GeometryProxy) -> some View {
         ActivityCard(title: title, imageName: imageName,
-                     progress: progress, total: total, geo: geo) {
-            showMascot(text: mascotText, geo: geo)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                     progress: progress, total: total,
+                     totalStars: AchievementStore.shared.totalStars(type: starType),
+                     geo: geo) {
+            showMascotFlip(text: mascotText)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 navigateTo = destination
             }
         }
@@ -158,10 +193,22 @@ struct HomeView: View {
             : cardWidth(geo) * 0.85
     }
 
-    private func showMascot(text: String, geo: GeometryProxy) {
+    private func showMascotFlip(text: String) {
         bubbleText = text
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+        speaker.speak(text)
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
+            mascotScale = 1.75
             bubbleVisible = true
+        }
+        withAnimation(.easeInOut(duration: 0.6)) {
+            mascotFlipY = 360
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                mascotScale = 1.0
+            }
+            mascotFlipY = 0
         }
     }
 
@@ -179,78 +226,6 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Speech bubble
-
-private struct SpeechBubble: View {
-    let text: String
-    let geo: GeometryProxy
-
-    private var minDim: CGFloat { min(geo.size.width, geo.size.height) }
-    private var fontSize: CGFloat { min(minDim * 0.028, 20) }
-    private var maxWidth: CGFloat { min(minDim * 0.42, 260) }
-    private var padding: CGFloat  { minDim * 0.022 }
-    private var radius: CGFloat   { minDim * 0.028 }
-    private var tailW:  CGFloat   { minDim * 0.030 }
-    private var tailH:  CGFloat   { minDim * 0.028 }
-
-    var body: some View {
-        Text(text)
-            .font(.app(size: fontSize))
-            .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, padding)
-            .padding(.vertical, padding)
-            .frame(maxWidth: maxWidth, alignment: .center)
-            .background(
-                GeometryReader { inner in
-                    let fullH = inner.size.height + tailH
-                    BottomTailBubble(radius: radius, tailWidth: tailW, tailHeight: tailH)
-                        .fill(Color.white.opacity(0.92))
-                        .frame(width: inner.size.width, height: fullH)
-                        .shadow(color: Color.appCardBorder.opacity(0.35), radius: 8, x: 0, y: 4)
-                    BottomTailBubble(radius: radius, tailWidth: tailW, tailHeight: tailH)
-                        .stroke(Color.appCardBorder, lineWidth: 1.5)
-                        .frame(width: inner.size.width, height: fullH)
-                }
-                .frame(maxWidth: maxWidth)
-            )
-    }
-}
-
-// MARK: - BottomTailBubble shape
-
-private struct BottomTailBubble: Shape {
-    let radius:     CGFloat
-    let tailWidth:  CGFloat
-    let tailHeight: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let body = CGRect(x: rect.minX, y: rect.minY,
-                          width: rect.width, height: rect.height - tailHeight)
-        let r = min(radius, body.height / 2, body.width / 2)
-        let tailMidX = body.minX + body.width * 0.25
-
-        var p = Path()
-        p.move(to: CGPoint(x: body.minX + r, y: body.minY))
-        p.addLine(to: CGPoint(x: body.maxX - r, y: body.minY))
-        p.addArc(center: CGPoint(x: body.maxX - r, y: body.minY + r),
-                 radius: r, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
-        p.addLine(to: CGPoint(x: body.maxX, y: body.maxY - r))
-        p.addArc(center: CGPoint(x: body.maxX - r, y: body.maxY - r),
-                 radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-        p.addLine(to: CGPoint(x: tailMidX + tailWidth / 2, y: body.maxY))
-        p.addLine(to: CGPoint(x: tailMidX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: tailMidX - tailWidth / 2, y: body.maxY))
-        p.addLine(to: CGPoint(x: body.minX + r, y: body.maxY))
-        p.addArc(center: CGPoint(x: body.minX + r, y: body.maxY - r),
-                 radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-        p.addLine(to: CGPoint(x: body.minX, y: body.minY + r))
-        p.addArc(center: CGPoint(x: body.minX + r, y: body.minY + r),
-                 radius: r, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
-        p.closeSubpath()
-        return p
-    }
-}
 
 // MARK: - Destination
 
@@ -265,6 +240,7 @@ private struct ActivityCard: View {
     let imageName: String
     let progress: Int
     let total: Int
+    let totalStars: Int
     let geo: GeometryProxy
     let action: () -> Void
 
@@ -304,6 +280,17 @@ private struct ActivityCard: View {
                                         : Color.appCardBorder.opacity(0.25)
                                     )
                             )
+                    }
+
+                    if totalStars > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: titleFontSize * 0.45))
+                                .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.10))
+                            Text("\(totalStars)")
+                                .font(.app(size: titleFontSize * 0.50))
+                                .foregroundStyle(Color(red: 0.55, green: 0.42, blue: 0.28))
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
