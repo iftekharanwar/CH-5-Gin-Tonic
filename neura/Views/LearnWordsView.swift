@@ -246,6 +246,7 @@ struct LearnWordsView: View {
                     DragGesture(minimumDistance: 0, coordinateSpace: .global)
                         .onChanged { value in
                             if drag == nil {
+                                SoundPlayer.shared.play(.tap)
                                 #if os(iOS)
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 #endif
@@ -283,6 +284,7 @@ struct LearnWordsView: View {
     private func handleDrop(_ letter: Character) {
         guard puzzleState == .idle else { return }
         if letter == puzzle.missingLetter {
+            SoundPlayer.shared.play(.pop)
             puzzleState = .correct
             withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
                 isRevealed = true
@@ -291,15 +293,18 @@ struct LearnWordsView: View {
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                SoundPlayer.shared.play(.success)
                 speaker.spellThenSpeak(puzzle.word)
             }
             // Show 3D reward after a short delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                SoundPlayer.shared.play(.whoosh)
                 withAnimation(.easeInOut(duration: 0.45)) {
                     showReward = true
                 }
             }
         } else {
+            SoundPlayer.shared.play(.wrong)
             puzzleState = .wrong
             #if os(iOS)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
@@ -552,7 +557,10 @@ private struct FillRewardView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .onAppear { modelVisible = true; labelVisible = true }
+        .onAppear {
+            SoundPlayer.shared.play(.reward)
+            modelVisible = true; labelVisible = true
+        }
     }
 }
 
@@ -725,6 +733,7 @@ private struct FillAllDoneView: View {
         }
         .frame(width: geo.size.width, height: geo.size.height)
         .onAppear {
+            SoundPlayer.shared.play(.reward)
             withAnimation(.spring(response: 0.65, dampingFraction: 0.55).delay(0.1)) {
                 starScale = 1.0; starOpacity = 1.0
             }

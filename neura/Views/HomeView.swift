@@ -346,6 +346,7 @@ private struct ActivityCard: View {
                 .onChanged { _ in
                     if !pressed {
                         pressed = true
+                        SoundPlayer.shared.play(.tap)
                         #if os(iOS)
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         #endif

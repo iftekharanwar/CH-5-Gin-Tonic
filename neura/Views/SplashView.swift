@@ -68,6 +68,7 @@ struct SplashView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard titleOpacity > 0.5 else { return }
+                SoundPlayer.shared.play(.pop)
                 withAnimation(.easeIn(duration: 0.35)) {
                     starOpacity  = 0
                     titleOpacity = 0

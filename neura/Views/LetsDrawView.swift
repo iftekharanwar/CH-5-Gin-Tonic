@@ -296,10 +296,12 @@ struct LetsDrawView: View {
             coveragePercent = pct
             if pct >= 0.88 && !isComplete {
                 isComplete = true
+                SoundPlayer.shared.play(.success)
                 #if os(iOS)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 #endif
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    SoundPlayer.shared.play(.whoosh)
                     withAnimation(.easeInOut(duration: 0.55)) { showReward = true }
                 }
             }
@@ -584,7 +586,10 @@ private struct RewardView: View {
             .padding(.bottom, geo.size.height * 0.06)
         }
         .frame(width: geo.size.width, height: geo.size.height)
-        .onAppear { modelVisible = true; labelVisible = true }
+        .onAppear {
+            SoundPlayer.shared.play(.reward)
+            modelVisible = true; labelVisible = true
+        }
     }
 }
 
@@ -645,6 +650,7 @@ private struct AllDoneView: View {
         }
         .frame(width: geo.size.width, height: geo.size.height)
         .onAppear {
+            SoundPlayer.shared.play(.reward)
             withAnimation(.spring(response: 0.65, dampingFraction: 0.55).delay(0.1)) {
                 starScale = 1.0; starOpacity = 1.0
             }
