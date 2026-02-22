@@ -27,7 +27,6 @@ struct WordPuzzle: Identifiable, Equatable {
     let blankIndex: Int
     let missingLetter: Character
 
-    // Make a puzzle with a configurable blank index (defaults to 1 for CVC words)
     static func make(word: String, modelName: String, color: Color, blankAt: Int = 1) -> WordPuzzle {
         let chars = Array(word.uppercased())
         let blankIdx = min(blankAt, chars.count - 1)

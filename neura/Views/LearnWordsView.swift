@@ -33,6 +33,9 @@ struct LearnWordsView: View {
     @State private var slotHighlighted = false
     @State private var bankLetters: [Character] = []
 
+    @State private var mascotVisible = false
+    @State private var mascotBounce: CGFloat = 0
+
     private var puzzle: WordPuzzle { WordPuzzle.all[currentIndex] }
     private var isLastWord: Bool { currentIndex == WordPuzzle.all.count - 1 }
 
@@ -47,7 +50,6 @@ struct LearnWordsView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // ── Background ────────────────────────────────────────
                 Image("background")
                     .resizable()
                     .scaledToFill()
@@ -56,7 +58,6 @@ struct LearnWordsView: View {
                     .ignoresSafeArea(.all)
 
                 if showReward {
-                    // ── 3D reward screen ─────────────────────────────────
                     FillRewardView(
                         word: puzzle.word,
                         imageName: puzzle.modelName,
@@ -69,7 +70,6 @@ struct LearnWordsView: View {
                     .transition(.opacity)
                     .zIndex(2)
                 } else {
-                    // ── Main layout ───────────────────────────────────────
                     let minDim = min(geo.size.width, geo.size.height)
                     let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
@@ -77,7 +77,6 @@ struct LearnWordsView: View {
 
                         Spacer(minLength: geo.size.height * 0.01)
 
-                        // Word illustration — scales with screen, smaller in portrait
                         Image(puzzle.modelName)
                             .resizable()
                             .scaledToFit()
@@ -88,12 +87,10 @@ struct LearnWordsView: View {
 
                         Spacer(minLength: geo.size.height * 0.02)
 
-                        // Word tiles row: C _ T
                         wordRow(geo: geo)
 
                         Spacer(minLength: geo.size.height * 0.02)
 
-                        // Hint text
                         Text(isRevealed ? "AMAZING!" : "DRAG THE MISSING LETTER!")
                             .font(.app(size: min(minDim * 0.028, 20)))
                             .foregroundStyle(
@@ -104,7 +101,6 @@ struct LearnWordsView: View {
                             .animation(.easeInOut(duration: 0.25), value: isRevealed)
                             .padding(.bottom, geo.size.height * 0.01)
 
-                        // Letter bank
                         letterBank(geo: geo)
                             .padding(.bottom, geo.size.height * 0.01)
 
@@ -112,7 +108,22 @@ struct LearnWordsView: View {
                     }
                 }
 
-                // ── Floating 3D drag tile ─────────────────────────────
+                if mascotVisible && !showReward && !showAllDone {
+                    let minDim2 = min(geo.size.width, geo.size.height)
+                    let starSize = minDim2 * 0.14
+                    Image("startmascot")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: starSize)
+                        .offset(y: mascotBounce)
+                        .position(
+                            x: geo.size.width - starSize * 0.45,
+                            y: geo.size.height - starSize * 0.20
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+
                 if let d = drag {
                     Dragging3DTile(letter: d.letter, color: d.color, size: d.tileSize * 1.3)
                         .shadow(color: d.color.opacity(0.45), radius: 16, x: 0, y: 8)
@@ -121,7 +132,6 @@ struct LearnWordsView: View {
                         .zIndex(99)
                 }
 
-                // ── All done celebration ───────────────────────────────
                 if showAllDone {
                     FillAllDoneView(completedCount: completedCount, geo: geo) {
                         dismiss()
@@ -149,7 +159,6 @@ struct LearnWordsView: View {
         .onAppear {
             let total = WordPuzzle.all.count
             if savedCount >= total {
-                // Already finished all — restart from scratch
                 completedCount = 0
                 currentIndex = 0
                 savedCount = 0
@@ -172,7 +181,6 @@ struct LearnWordsView: View {
                 .font(.app(size: min(minDim * 0.04, 26)))
                 .foregroundStyle(Color.appOrange)
             Spacer()
-            // Progress dots
             HStack(spacing: minDim * 0.008) {
                 ForEach(0..<WordPuzzle.all.count, id: \.self) { i in
                     Circle()
@@ -262,6 +270,12 @@ struct LearnWordsView: View {
                         .onChanged { value in
                             if drag == nil {
                                 SoundPlayer.shared.play(.tap)
+                                speaker.speakLetter(letter)
+                                if !mascotVisible {
+                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                                        mascotVisible = true
+                                    }
+                                }
                                 #if os(iOS)
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 #endif
@@ -292,8 +306,6 @@ struct LearnWordsView: View {
         }
     }
 
-    // nextButton removed — reward view now has the continue button
-
     // MARK: - Logic
 
     private func handleDrop(_ letter: Character) {
@@ -304,6 +316,7 @@ struct LearnWordsView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
                 isRevealed = true
             }
+            bounceMascot(height: -25)
             #if os(iOS)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
@@ -311,7 +324,6 @@ struct LearnWordsView: View {
                 SoundPlayer.shared.play(.success)
                 speaker.spellThenSpeak(puzzle.word)
             }
-            // Show 3D reward after a short delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 SoundPlayer.shared.play(.whoosh)
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -321,9 +333,21 @@ struct LearnWordsView: View {
         } else {
             SoundPlayer.shared.play(.wrong)
             puzzleState = .wrong
+            bounceMascot(height: -8)
             #if os(iOS)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             #endif
+        }
+    }
+
+    private func bounceMascot(height: CGFloat) {
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.3)) {
+            mascotBounce = height
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                mascotBounce = 0
+            }
         }
     }
 
@@ -345,12 +369,30 @@ struct LearnWordsView: View {
     // MARK: - Colour map
 
     private func letterColor(_ v: Character) -> Color {
-        Color(red: 0.28, green: 0.24, blue: 0.20)
+        switch v {
+        case "A": return Color(red: 0.90, green: 0.30, blue: 0.30)
+        case "B": return Color(red: 0.20, green: 0.55, blue: 0.85)
+        case "C": return Color(red: 0.95, green: 0.55, blue: 0.10)
+        case "D": return Color(red: 0.55, green: 0.35, blue: 0.75)
+        case "E": return Color(red: 0.18, green: 0.65, blue: 0.40)
+        case "G": return Color(red: 0.85, green: 0.45, blue: 0.65)
+        case "H": return Color(red: 0.30, green: 0.70, blue: 0.70)
+        case "I": return Color(red: 0.80, green: 0.60, blue: 0.20)
+        case "K": return Color(red: 0.60, green: 0.40, blue: 0.30)
+        case "N": return Color(red: 0.45, green: 0.55, blue: 0.80)
+        case "O": return Color(red: 0.85, green: 0.40, blue: 0.20)
+        case "P": return Color(red: 0.65, green: 0.30, blue: 0.60)
+        case "R": return Color(red: 0.75, green: 0.25, blue: 0.25)
+        case "S": return Color(red: 0.25, green: 0.60, blue: 0.55)
+        case "T": return Color(red: 0.50, green: 0.40, blue: 0.70)
+        case "U": return Color(red: 0.70, green: 0.50, blue: 0.15)
+        case "Y": return Color(red: 0.85, green: 0.70, blue: 0.10)
+        default:  return Color(red: 0.40, green: 0.35, blue: 0.30)
+        }
     }
 }
 
-// MARK: - Flat tile (word row + letter bank)
-// Uses box.png as background, letter rendered on top.
+// MARK: - Flat tile
 
 private struct FlatTile: View {
     let letter: Character
@@ -381,7 +423,7 @@ private struct BlankTile: View {
     let tileSize:      CGFloat
     let isHighlighted: Bool
     let puzzleState:   PuzzleState
-    var revealedLetter: Character? = nil   // set when correct letter is dropped
+    var revealedLetter: Character? = nil
     var revealedColor:  Color = .primary
 
     @State private var shakeOffset: CGFloat = 0
@@ -392,7 +434,6 @@ private struct BlankTile: View {
 
     var body: some View {
         ZStack {
-            // Glow halo (only when dragging over, not after reveal)
             if isHighlighted && !isRevealed {
                 RoundedRectangle(cornerRadius: tileSize * 0.18, style: .continuous)
                     .fill(glowColor.opacity(0.35))
@@ -400,7 +441,6 @@ private struct BlankTile: View {
                     .scaleEffect(1.18)
             }
 
-            // Box background
             Image("box")
                 .resizable()
                 .scaledToFill()
@@ -423,7 +463,6 @@ private struct BlankTile: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isHighlighted)
 
             if let letter = revealedLetter {
-                // Revealed letter — full opacity, pops in
                 Text(String(letter))
                     .font(.app(size: tileSize * 0.48))
                     .foregroundStyle(revealedColor)
@@ -466,7 +505,7 @@ private struct BlankTile: View {
     }
 }
 
-// MARK: - Floating drag tile (lightweight 2D — no SceneKit overhead)
+// MARK: - Floating drag tile
 
 private struct Dragging3DTile: View {
     let letter: Character
@@ -475,7 +514,6 @@ private struct Dragging3DTile: View {
 
     var body: some View {
         ZStack {
-            // Soft background card
             RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
                 .fill(Color.white)
                 .frame(width: size, height: size)
@@ -489,7 +527,7 @@ private struct Dragging3DTile: View {
     }
 }
 
-// MARK: - Fill Reward view (3D model after correct answer)
+// MARK: - Fill Reward view
 
 private struct FillRewardView: View {
     let word: String
@@ -607,7 +645,6 @@ private struct FillModelRealityView: UIViewRepresentable {
         coord.modelEntity = model
         coord.baseScale = baseScale
 
-        // Gentle idle spin — pauses when kid is touching
         var elapsed: Float = 0
         arView.scene.subscribe(to: SceneEvents.Update.self) { ev in
             guard !coord.isTouching else { return }
@@ -619,11 +656,9 @@ private struct FillModelRealityView: UIViewRepresentable {
         let camAnchor = AnchorEntity(world: [0, 0, 0.55]); camAnchor.addChild(cam)
         arView.scene.addAnchor(camAnchor)
 
-        // Drag to spin
         let pan = UIPanGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePan(_:)))
         arView.addGestureRecognizer(pan)
 
-        // Pinch to zoom
         let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(FillCoordinator.handlePinch(_:)))
         arView.addGestureRecognizer(pinch)
 
@@ -684,7 +719,7 @@ class FillCoordinator: NSObject {
 }
 #endif
 
-// MARK: - All Done celebration screen (Fill)
+// MARK: - All Done celebration
 
 private struct FillAllDoneView: View {
     let completedCount: Int

@@ -13,7 +13,6 @@ enum AppSound: String, CaseIterable {
 
 // MARK: - SoundPlayer
 
-/// Lightweight singleton that preloads short mp3s and plays them instantly.
 final class SoundPlayer {
     static let shared = SoundPlayer()
 

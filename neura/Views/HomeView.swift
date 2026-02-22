@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - Home Screen
-
 struct HomeView: View {
 
     @AppStorage("drawCompletedCount") private var drawCompleted = 0
@@ -19,7 +17,6 @@ struct HomeView: View {
             GeometryReader { geo in
                 ZStack(alignment: .bottomLeading) {
 
-                    // ── Background — edge to edge ──────────────────────
                     Image("background")
                         .resizable()
                         .scaledToFill()
@@ -27,10 +24,8 @@ struct HomeView: View {
                         .clipped()
                         .ignoresSafeArea(.all)
 
-                    // ── Main content ───────────────────────────────────
                     let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
-                        // Wordmark
                         Text("neura")
                             .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
                             .foregroundStyle(Color.appOrange)
@@ -39,16 +34,13 @@ struct HomeView: View {
 
                         Spacer()
 
-                        // Cards — side by side in landscape, stacked in portrait
                         cardsLayout(geo: geo, isLand: isLand)
                             .frame(maxWidth: .infinity)
 
-                        // Space below cards — leave room for mascot
                         Spacer(minLength: geo.size.height * (isLand ? 0.16 : 0.10))
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
 
-                    // ── Star peeking from bottom-left + bubble above it ──
                     let minDim = min(geo.size.width, geo.size.height)
                     let starSize: CGFloat = min(minDim * 0.20, 160)
                     let starCX: CGFloat = starSize * 0.45
@@ -63,7 +55,6 @@ struct HomeView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
 
                         if bubbleVisible {
-                            // Bubble sits just above the visible star tip, shifted left to align with it
                             SpeechBubble(text: bubbleText, geo: geo)
                                 .position(
                                     x: starCX + geo.size.width * 0.12,
@@ -188,7 +179,7 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Speech bubble (tail points down toward star tip)
+// MARK: - Speech bubble
 
 private struct SpeechBubble: View {
     let text: String
@@ -203,7 +194,6 @@ private struct SpeechBubble: View {
     private var tailH:  CGFloat   { minDim * 0.028 }
 
     var body: some View {
-        // Tail is part of the shape frame — pad bottom so text stays inside body only
         Text(text)
             .font(.app(size: fontSize))
             .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
@@ -212,7 +202,6 @@ private struct SpeechBubble: View {
             .padding(.vertical, padding)
             .frame(maxWidth: maxWidth, alignment: .center)
             .background(
-                // Shape frame = text frame + tail height below
                 GeometryReader { inner in
                     let fullH = inner.size.height + tailH
                     BottomTailBubble(radius: radius, tailWidth: tailW, tailHeight: tailH)
@@ -228,7 +217,7 @@ private struct SpeechBubble: View {
     }
 }
 
-// MARK: - Bubble with bottom-centre tail pointing down
+// MARK: - BottomTailBubble shape
 
 private struct BottomTailBubble: Shape {
     let radius:     CGFloat
@@ -236,33 +225,25 @@ private struct BottomTailBubble: Shape {
     let tailHeight: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        // Body sits in the top portion; tail hangs below
         let body = CGRect(x: rect.minX, y: rect.minY,
                           width: rect.width, height: rect.height - tailHeight)
         let r = min(radius, body.height / 2, body.width / 2)
-        // Tail centred on left quarter of bubble (toward the star)
         let tailMidX = body.minX + body.width * 0.25
 
         var p = Path()
         p.move(to: CGPoint(x: body.minX + r, y: body.minY))
-        // Top edge → top-right
         p.addLine(to: CGPoint(x: body.maxX - r, y: body.minY))
         p.addArc(center: CGPoint(x: body.maxX - r, y: body.minY + r),
                  radius: r, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
-        // Right edge → bottom-right
         p.addLine(to: CGPoint(x: body.maxX, y: body.maxY - r))
         p.addArc(center: CGPoint(x: body.maxX - r, y: body.maxY - r),
                  radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-        // Bottom edge — right of tail
         p.addLine(to: CGPoint(x: tailMidX + tailWidth / 2, y: body.maxY))
-        // Tail point
         p.addLine(to: CGPoint(x: tailMidX, y: rect.maxY))
-        // Bottom edge — left of tail
         p.addLine(to: CGPoint(x: tailMidX - tailWidth / 2, y: body.maxY))
         p.addLine(to: CGPoint(x: body.minX + r, y: body.maxY))
         p.addArc(center: CGPoint(x: body.minX + r, y: body.maxY - r),
                  radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-        // Left edge → top-left
         p.addLine(to: CGPoint(x: body.minX, y: body.minY + r))
         p.addArc(center: CGPoint(x: body.minX + r, y: body.minY + r),
                  radius: r, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
@@ -300,7 +281,6 @@ private struct ActivityCard: View {
             action()
         } label: {
             VStack(spacing: 0) {
-                // ── Title area ─────────────────────────────────────────
                 HStack(spacing: 6) {
                     Text(title)
                         .font(.app(size: titleFontSize))
@@ -329,12 +309,10 @@ private struct ActivityCard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, titlePadding)
 
-                // ── Divider ────────────────────────────────────────────
                 Rectangle()
                     .fill(Color.appCardBorder)
                     .frame(height: 1.5)
 
-                // ── Illustration ───────────────────────────────────────
                 Image(imageName)
                     .resizable()
                     .scaledToFit()

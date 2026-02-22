@@ -4,25 +4,19 @@ struct SplashView: View {
 
     var onFinished: () -> Void
 
-    // Star only
     @State private var floatY:      CGFloat = 0
     @State private var starScale:   CGFloat = 0.6
     @State private var starOpacity: Double  = 0
 
-    // Title — driven purely by position, no offset
-    @State private var titleY:      CGFloat = 0   // set in onAppear from geo
+    @State private var titleY:      CGFloat = 0
     @State private var titleOpacity: Double = 0
 
-    // Tap label pulse
     @State private var tapPulse: CGFloat = 1.0
-
-    // Sparkles
     @State private var sparkles: [SparkleData] = SparkleData.generate()
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // Background
                 Image("background")
                     .resizable()
                     .scaledToFill()
@@ -30,12 +24,10 @@ struct SplashView: View {
                     .clipped()
                     .ignoresSafeArea()
 
-                // Sparkles
                 ForEach(sparkles) { sp in
                     SparkleView(data: sp, geo: geo)
                 }
 
-                // Star — floats up/down, wobbles, completely independent
                 let isLand = geo.size.width > geo.size.height
                 let starFrac: CGFloat = isLand ? 0.52 : 0.38
                 Image("startmascot")
@@ -49,7 +41,6 @@ struct SplashView: View {
                     .position(x: geo.size.width / 2,
                               y: geo.size.height * (isLand ? 0.38 : 0.32) + floatY)
 
-                // Title — fixed position, only opacity animates in
                 VStack(spacing: 12) {
                     Text("NEURA")
                         .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.13, 96)))
@@ -63,7 +54,6 @@ struct SplashView: View {
                         .scaleEffect(tapPulse)
                 }
                 .opacity(titleOpacity)
-                // Hard-coded position — never touches the star's state
                 .position(x: geo.size.width / 2,
                           y: geo.size.height * (isLand ? 0.80 : 0.72))
             }
@@ -85,23 +75,19 @@ struct SplashView: View {
     }
 
     private func startAnimations() {
-        // Star pop-in
         withAnimation(.spring(response: 0.7, dampingFraction: 0.55).delay(0.2)) {
             starScale   = 1.0
             starOpacity = 1.0
         }
 
-        // Star float — moves the position Y, title position is unrelated
         withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true).delay(0.5)) {
             floatY = -18
         }
 
-        // Title fade in only — no offset, no layout change
         withAnimation(.easeOut(duration: 0.6).delay(0.8)) {
             titleOpacity = 1.0
         }
 
-        // Tap label pulse
         withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true).delay(1.3)) {
             tapPulse = 1.08
         }
