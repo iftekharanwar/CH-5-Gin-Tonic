@@ -14,20 +14,18 @@ final class ModelCache {
     func preload(_ modelName: String) {
         guard cache[modelName] == nil, !loading.contains(modelName) else { return }
         loading.insert(modelName)
-        Task.detached(priority: .userInitiated) {
+        Task { @MainActor in
             guard let url = Bundle.main.url(forResource: modelName, withExtension: "usdz") else {
-                await MainActor.run { self.loading.remove(modelName) }
+                self.loading.remove(modelName)
                 return
             }
             do {
-                let entity = try Entity.load(contentsOf: url)
-                await MainActor.run {
-                    self.cache[modelName] = entity
-                    self.loading.remove(modelName)
-                }
+                let entity = try await Entity(contentsOf: url)
+                self.cache[modelName] = entity
+                self.loading.remove(modelName)
             } catch {
                 print("[ModelCache] failed to load \(modelName): \(error)")
-                await MainActor.run { self.loading.remove(modelName) }
+                self.loading.remove(modelName)
             }
         }
     }

@@ -14,8 +14,11 @@ struct HomeView: View {
     @State private var bubbleText = ""
     @State private var hasAppeared   = false
     @State private var mascotScale: CGFloat = 1.0
-    @State private var mascotFlipY: Double = 0
     @State private var musicOn = false
+
+    // Center-stage mascot animation
+    @State private var mascotCenterStage = false
+    @State private var mascotSpin: Double = 0
 
     var body: some View {
         NavigationStack {
@@ -64,8 +67,12 @@ struct HomeView: View {
 
                     let minDim = min(geo.size.width, geo.size.height)
                     let starSize: CGFloat = min(minDim * 0.20, 160)
-                    let starCX: CGFloat = starSize * 0.45
-                    let starCY: CGFloat = geo.size.height - starSize * 0.10
+                    let restX: CGFloat = starSize * 0.45
+                    let restY: CGFloat = geo.size.height - starSize * 0.10
+                    let centerX: CGFloat = geo.size.width / 2
+                    let centerY: CGFloat = geo.size.height * 0.42
+                    let starCX = mascotCenterStage ? centerX : restX
+                    let starCY = mascotCenterStage ? centerY : restY
 
                     if mascotVisible {
                         Image("startmascot")
@@ -73,21 +80,22 @@ struct HomeView: View {
                             .scaledToFit()
                             .frame(width: starSize)
                             .scaleEffect(mascotScale)
-                            .rotation3DEffect(.degrees(mascotFlipY), axis: (x: 0, y: 1, z: 0))
+                            .rotationEffect(.degrees(mascotSpin))
                             .position(x: starCX, y: starCY)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
 
                         if bubbleVisible {
+                            let bubbleX = mascotCenterStage ? centerX : restX + geo.size.width * 0.12
+                            let bubbleY = mascotCenterStage
+                                ? centerY - starSize * mascotScale * 0.6 - 40
+                                : restY - starSize * 0.90
                             MascotSpeechBubble(
                                 text: bubbleText,
                                 fontSize: min(minDim * 0.028, 20),
-                                tailDirection: .left,
+                                tailDirection: mascotCenterStage ? .left : .left,
                                 maxWidth: min(minDim * 0.42, 260)
                             )
-                            .position(
-                                x: starCX + geo.size.width * 0.12,
-                                y: starCY - starSize * 0.90
-                            )
+                            .position(x: bubbleX, y: bubbleY)
                             .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                         }
                     }
@@ -170,7 +178,7 @@ struct HomeView: View {
                      totalStars: AchievementStore.shared.totalStars(type: starType),
                      geo: geo) {
             showMascotFlip(text: mascotText)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
                 navigateTo = destination
             }
         }
@@ -197,18 +205,34 @@ struct HomeView: View {
         bubbleText = text
         speaker.speak(text)
 
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
-            mascotScale = 1.75
-            bubbleVisible = true
+        // Step 1: Move mascot to center and scale up
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.7)) {
+            mascotCenterStage = true
+            mascotScale = 1.6
         }
-        withAnimation(.easeInOut(duration: 0.6)) {
-            mascotFlipY = 360
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                mascotScale = 1.0
+
+        // Step 2: Show bubble once mascot arrives at center
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                bubbleVisible = true
             }
-            mascotFlipY = 0
+        }
+
+        // Step 3: Gentle spin while in center
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeInOut(duration: 0.9)) {
+                mascotSpin = 360
+            }
+        }
+
+        // Step 4: Return mascot to corner before navigation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                mascotCenterStage = false
+                mascotScale = 1.0
+                bubbleVisible = false
+            }
+            mascotSpin = 0
         }
     }
 

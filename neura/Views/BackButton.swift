@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Chunky wooden arrow button for kids — sits top-left of any destination view.
+/// Kid-friendly back button matching the app's orange colour scheme.
 struct BackButton: View {
     let action: () -> Void
 
@@ -20,17 +20,17 @@ struct BackButton: View {
                     .font(.system(size: 22, weight: .heavy, design: .rounded))
             }
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.35), radius: 1, x: 0, y: 1)
+            .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(red: 0.52, green: 0.30, blue: 0.10))
-                    .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 3)
+                    .fill(Color(red: 1.0, green: 0.608, blue: 0.0))
+                    .shadow(color: Color(red: 1.0, green: 0.50, blue: 0.0).opacity(0.35), radius: 4, x: 0, y: 3)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color(red: 0.28, green: 0.14, blue: 0.04), lineWidth: 2.5)
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 2)
             )
         }
         .buttonStyle(.plain)

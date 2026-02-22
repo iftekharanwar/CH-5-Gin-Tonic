@@ -350,15 +350,17 @@ struct LearnWordsView: View {
             showMascotMessage("Yes! That's right!")
             speaker.speak("Yes! That's right!")
             sparkleOrigin = CGPoint(x: slotFrame.midX, y: slotFrame.midY)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { sparkleOrigin = nil }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { sparkleOrigin = nil }
             #if os(iOS)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            // Wait for "Yes! That's right!" to finish before spelling
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 SoundPlayer.shared.play(.success)
                 speaker.spellThenSpeak(puzzle.word)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            // Show reward after spelling completes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
                 SoundPlayer.shared.play(.whoosh)
                 withAnimation(.easeInOut(duration: 0.45)) {
                     showReward = true

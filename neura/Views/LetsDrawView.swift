@@ -137,8 +137,8 @@ struct LetsDrawView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: min(
-                                isLand ? geo.size.height * 0.14 : geo.size.height * 0.12,
-                                110
+                                isLand ? geo.size.height * 0.22 : geo.size.height * 0.18,
+                                180
                             ))
                             .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 3)
 
