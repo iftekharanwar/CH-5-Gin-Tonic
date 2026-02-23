@@ -31,6 +31,8 @@ struct StarRatingView: View {
                     )
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(stars) out of 3 stars")
         .onAppear {
             if animated { appeared = true }
         }

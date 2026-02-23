@@ -17,15 +17,18 @@ private struct DragState {
 // MARK: - LearnWordsView
 
 struct LearnWordsView: View {
+    let startIndex: Int
+
+    init(startIndex: Int = 0) {
+        self.startIndex = startIndex
+    }
+
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speaker = WordSpeaker()
 
-    @AppStorage("fillCompletedCount") private var savedCount = 0
     @State private var currentIndex  = 0
     @State private var puzzleState: PuzzleState = .idle
     @State private var isRevealed    = false
-    @State private var completedCount = 0
-    @State private var showAllDone   = false
     @State private var showReward    = false
 
     @State private var drag: DragState? = nil
@@ -43,7 +46,6 @@ struct LearnWordsView: View {
     @State private var canSkipToReward = false
 
     private var puzzle: WordPuzzle { WordPuzzle.all[currentIndex] }
-    private var isLastWord: Bool { currentIndex == WordPuzzle.all.count - 1 }
 
     private static func makeBankLetters(for puzzle: WordPuzzle) -> [Character] {
         let correct = puzzle.missingLetter
@@ -70,7 +72,7 @@ struct LearnWordsView: View {
                         modelName: puzzle.modelName,
                         stars: earnedStars,
                         geo: geo,
-                        isLastWord: isLastWord
+                        isLastWord: currentIndex >= WordPuzzle.all.count - 1
                     ) {
                         advanceWord()
                     }
@@ -118,7 +120,7 @@ struct LearnWordsView: View {
                     }
                 }
 
-                if mascotVisible && !showReward && !showAllDone {
+                if mascotVisible && !showReward {
                     let minDim2 = min(geo.size.width, geo.size.height)
                     let starSize = minDim2 * 0.14
                     MascotView(
@@ -150,13 +152,6 @@ struct LearnWordsView: View {
                         .zIndex(98)
                 }
 
-                if showAllDone {
-                    FillAllDoneView(completedCount: completedCount, geo: geo) {
-                        dismiss()
-                    }
-                    .transition(.opacity)
-                    .zIndex(100)
-                }
             }
         }
         .ignoresSafeArea(.all)
@@ -180,15 +175,7 @@ struct LearnWordsView: View {
             bankLetters = Self.makeBankLetters(for: puzzle)
         }
         .onAppear {
-            let total = WordPuzzle.all.count
-            if savedCount >= total {
-                completedCount = 0
-                currentIndex = 0
-                savedCount = 0
-            } else {
-                completedCount = savedCount
-                currentIndex = savedCount
-            }
+            currentIndex = startIndex
             bankLetters = Self.makeBankLetters(for: puzzle)
             #if os(iOS)
             ModelCache.shared.preload(puzzle.modelName)
@@ -200,31 +187,18 @@ struct LearnWordsView: View {
 
     private func topBar(geo: GeometryProxy) -> some View {
         let minDim = min(geo.size.width, geo.size.height)
-        return HStack {
-            BackButton { dismiss() }
-            Spacer()
-            Text("FILL")
+        return ZStack {
+            Text(puzzle.word)
                 .font(.app(size: min(minDim * 0.04, 26)))
                 .foregroundStyle(Color.appOrange)
-            Spacer()
-            HStack(spacing: minDim * 0.008) {
-                ForEach(0..<WordPuzzle.all.count, id: \.self) { i in
-                    Circle()
-                        .fill(
-                            i < completedCount
-                            ? Color(red: 0.18, green: 0.65, blue: 0.35)
-                            : i == currentIndex
-                            ? Color.appOrange
-                            : Color.appCardBorder
-                        )
-                        .frame(width: i == currentIndex ? minDim * 0.016 : minDim * 0.010,
-                               height: i == currentIndex ? minDim * 0.016 : minDim * 0.010)
-                        .animation(.spring(response: 0.28), value: currentIndex)
-                }
+
+            HStack {
+                BackButton { dismiss() }
+                Spacer()
             }
         }
         .padding(.horizontal, geo.size.width * 0.03)
-        .padding(.top, geo.size.height * 0.02)
+        .padding(.top, max(geo.safeAreaInsets.top, geo.size.height * 0.04))
         .padding(.bottom, geo.size.height * 0.01)
     }
 
@@ -244,6 +218,7 @@ struct LearnWordsView: View {
                         revealedLetter: isRevealed ? puzzle.missingLetter : nil,
                         revealedColor:  letterColor(puzzle.missingLetter)
                     )
+                    .accessibilityLabel("Missing letter slot")
                     .overlay(
                         GeometryReader { g in
                             Color.clear
@@ -335,6 +310,8 @@ struct LearnWordsView: View {
                         }
                 )
                 .disabled(isRevealed)
+                .accessibilityLabel("Letter \(String(letter))")
+                .accessibilityHint("Drag to the blank space")
             }
         }
     }
@@ -421,17 +398,22 @@ struct LearnWordsView: View {
     }
 
     private func advanceWord() {
-        completedCount += 1
-        savedCount = completedCount
-        if isLastWord {
-            withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }
+        let nextIndex = currentIndex + 1
+        if nextIndex < WordPuzzle.all.count {
+            currentIndex = nextIndex
+            puzzleState = .idle
+            isRevealed = false
+            showReward = false
+            wrongCount = 0
+            earnedStars = 0
+            sparkleOrigin = nil
+            canSkipToReward = false
+            mascotSpeech = nil
+            showMascotSpeech = false
+            bankLetters = Self.makeBankLetters(for: WordPuzzle.all[nextIndex])
+            speaker.speak(WordPuzzle.all[nextIndex].word)
         } else {
-            withAnimation(.easeInOut(duration: 0.35)) { showReward = false }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                isRevealed = false
-                puzzleState = .idle
-                currentIndex += 1
-            }
+            dismiss()
         }
     }
 
@@ -683,12 +665,10 @@ private struct FillRewardView: View {
 
                 Button(action: onContinue) {
                     HStack(spacing: minDim * 0.015) {
-                        Text(isLastWord ? "ALL DONE!" : "NEXT WORD")
+                        Text(isLastWord ? "DONE" : "NEXT")
                             .font(.app(size: min(minDim * 0.035, 22)))
-                        if !isLastWord {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
-                        }
+                        Image(systemName: isLastWord ? "checkmark.circle.fill" : "arrow.right.circle.fill")
+                            .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, geo.size.width * 0.05)

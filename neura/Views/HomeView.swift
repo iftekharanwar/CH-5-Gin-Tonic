@@ -2,8 +2,8 @@ import SwiftUI
 
 struct HomeView: View {
 
-    @AppStorage("drawCompletedCount") private var drawCompleted = 0
-    @AppStorage("fillCompletedCount") private var fillCompleted = 0
+    private var drawCompleted: Int { AchievementStore.shared.completedCount(type: "draw") }
+    private var fillCompleted: Int { AchievementStore.shared.completedCount(type: "fill") }
 
     @State private var navigateTo: HomeDestination? = nil
     @StateObject private var speaker = WordSpeaker()
@@ -34,25 +34,56 @@ struct HomeView: View {
 
                     let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
-                        ZStack(alignment: .topTrailing) {
+                        ZStack {
                             Text("neura")
                                 .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
                                 .foregroundStyle(Color.appOrange)
                                 .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
                                 .frame(maxWidth: .infinity)
 
-                            Button {
-                                musicOn.toggle()
-                                SoundPlayer.shared.toggleMusic()
-                            } label: {
-                                Image(systemName: musicOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundStyle(Color.appOrange.opacity(0.7))
-                                    .padding(10)
-                                    .background(Circle().fill(Color.white.opacity(0.5)))
+                            HStack(spacing: 10) {
+                                Button {
+                                    SoundPlayer.shared.play(.tap)
+                                    navigateTo = .progress
+                                } label: {
+                                    Image(systemName: "chart.bar.fill")
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundStyle(Color.appOrange.opacity(0.7))
+                                        .padding(10)
+                                        .background(Circle().fill(Color.white.opacity(0.5)))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View progress")
+
+                                Button {
+                                    SoundPlayer.shared.play(.tap)
+                                    navigateTo = .gallery
+                                } label: {
+                                    Image(systemName: "photo.on.rectangle.angled")
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundStyle(Color.appOrange.opacity(0.7))
+                                        .padding(10)
+                                        .background(Circle().fill(Color.white.opacity(0.5)))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View drawing gallery")
+
+                                Spacer()
+
+                                Button {
+                                    musicOn.toggle()
+                                    SoundPlayer.shared.toggleMusic()
+                                } label: {
+                                    Image(systemName: musicOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundStyle(Color.appOrange.opacity(0.7))
+                                        .padding(10)
+                                        .background(Circle().fill(Color.white.opacity(0.5)))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(musicOn ? "Turn off music" : "Turn on music")
                             }
-                            .buttonStyle(.plain)
-                            .padding(.trailing, 16)
+                            .padding(.horizontal, 16)
                         }
                         .padding(.top, geo.size.height * (isLand ? 0.07 : 0.05))
 
@@ -83,6 +114,7 @@ struct HomeView: View {
                             .rotationEffect(.degrees(mascotSpin))
                             .position(x: starCX, y: starCY)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .accessibilityHidden(true)
 
                         if bubbleVisible {
                             let bubbleX = mascotCenterStage ? centerX : restX + geo.size.width * 0.12
@@ -131,8 +163,18 @@ struct HomeView: View {
             }
             .navigationDestination(item: $navigateTo) { dest in
                 switch dest {
-                case .draw: LetsDrawView()
-                case .fill: LearnWordsView()
+                case .draw:
+                    ActivityGridView(activityType: .draw)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                case .fill:
+                    LearnWordsView()
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                case .progress:
+                    ProgressDashboardView()
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                case .gallery:
+                    DrawingGalleryView()
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
         }
@@ -145,40 +187,42 @@ struct HomeView: View {
                 Spacer(minLength: 0)
                 activityCardView(title: "DRAW", imageName: "drawasset",
                                  progress: drawCompleted, total: DrawActivity.all.count,
-                                 starType: "draw",
+                                 starType: "draw", showStars: false,
                                  mascotText: "Let's draw! Pick up your brush!",
                                  destination: .draw, delay: 0.05, geo: geo)
                 activityCardView(title: "FILL", imageName: "fillwords",
                                  progress: fillCompleted, total: WordPuzzle.all.count,
-                                 starType: "fill",
+                                 starType: "fill", showStars: true,
                                  mascotText: "Let's fill in the letters! You can do it!",
                                  destination: .fill, delay: 0.18, geo: geo)
                 Spacer(minLength: 0)
             }
         } else {
-            VStack(spacing: geo.size.height * 0.025) {
+            HStack(spacing: geo.size.width * 0.04) {
+                Spacer(minLength: 0)
                 activityCardView(title: "DRAW", imageName: "drawasset",
                                  progress: drawCompleted, total: DrawActivity.all.count,
-                                 starType: "draw",
+                                 starType: "draw", showStars: false,
                                  mascotText: "Let's draw! Pick up your brush!",
                                  destination: .draw, delay: 0.05, geo: geo)
                 activityCardView(title: "FILL", imageName: "fillwords",
                                  progress: fillCompleted, total: WordPuzzle.all.count,
-                                 starType: "fill",
+                                 starType: "fill", showStars: true,
                                  mascotText: "Let's fill in the letters! You can do it!",
                                  destination: .fill, delay: 0.18, geo: geo)
+                Spacer(minLength: 0)
             }
         }
     }
 
     private func activityCardView(title: String, imageName: String,
                                    progress: Int, total: Int,
-                                   starType: String,
+                                   starType: String, showStars: Bool,
                                    mascotText: String, destination: HomeDestination,
                                    delay: Double, geo: GeometryProxy) -> some View {
         ActivityCard(title: title, imageName: imageName,
                      progress: progress, total: total,
-                     totalStars: AchievementStore.shared.totalStars(type: starType),
+                     totalStars: showStars ? AchievementStore.shared.totalStars(type: starType) : 0,
                      geo: geo) {
             showMascotFlip(text: mascotText)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
@@ -195,13 +239,13 @@ struct HomeView: View {
         let isLand = geo.size.width > geo.size.height
         return isLand
             ? min(geo.size.width * 0.36, 300)
-            : min(geo.size.width * 0.55, 280)
+            : min(geo.size.width * 0.42, 320)
     }
     private func cardHeight(_ geo: GeometryProxy) -> CGFloat {
         let isLand = geo.size.width > geo.size.height
         return isLand
             ? cardWidth(geo) * 1.30
-            : cardWidth(geo) * 0.85
+            : cardWidth(geo) * 1.30
     }
 
     private func showMascotFlip(text: String) {
@@ -257,7 +301,7 @@ struct HomeView: View {
 // MARK: - Destination
 
 enum HomeDestination: Hashable {
-    case draw, fill
+    case draw, fill, progress, gallery
 }
 
 // MARK: - Activity card

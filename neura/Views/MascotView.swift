@@ -23,6 +23,7 @@ struct MascotView: View {
                 .scaledToFit()
                 .frame(width: size)
                 .offset(y: bounce + floatY)
+                .accessibilityHidden(true)
 
             if showSpeech, let text = speechText, !text.isEmpty {
                 MascotSpeechBubble(text: text, fontSize: max(size * 0.11, 13), tailDirection: tailDirection)
@@ -31,6 +32,7 @@ struct MascotView: View {
                         y: -size * 0.35
                     )
                     .transition(.scale(scale: 0.6, anchor: tailDirection == .left ? .bottomLeading : .bottomTrailing).combined(with: .opacity))
+                    .accessibilityLabel(text)
             }
         }
         .onAppear {

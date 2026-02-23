@@ -51,5 +51,7 @@ struct BackButton: View {
                     action()
                 }
         )
+        .accessibilityLabel("Go back")
+        .accessibilityHint("Returns to the previous screen")
     }
 }
