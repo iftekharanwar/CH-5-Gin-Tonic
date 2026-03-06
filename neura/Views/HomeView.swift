@@ -35,7 +35,7 @@ struct HomeView: View {
                     let isLand = geo.size.width > geo.size.height
                     VStack(spacing: 0) {
                         ZStack {
-                            Text("neura")
+                            Text("Starmy")
                                 .font(.app(size: min(min(geo.size.width, geo.size.height) * 0.10, 56)))
                                 .foregroundStyle(Color.appOrange)
                                 .shadow(color: Color.appOrange.opacity(0.25), radius: 6, x: 0, y: 3)
