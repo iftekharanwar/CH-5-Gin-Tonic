@@ -31,16 +31,13 @@ struct DrawActivity {
 // MARK: - LetsDrawView
 
 struct LetsDrawView: View {
-    let startIndex: Int
-
-    init(startIndex: Int = 0) {
-        self.startIndex = startIndex
-    }
-
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speaker = WordSpeaker()
 
+    @AppStorage("drawCompletedCount") private var savedCount = 0
     @State private var activityIndex = 0
+    @State private var completedCount = 0
+    @State private var showAllDone = false
 
     @State private var strokes: [[CGPoint]] = []
     @State private var strokeColors: [Color] = []
@@ -71,6 +68,7 @@ struct LetsDrawView: View {
     @State private var lastMilestone = 0
     @State private var mascotSpeech: String? = nil
     @State private var showMascotSpeech = false
+    @State private var earnedStars = 0
     @State private var showLeaveAlert = false
 
     private var activity: DrawActivity { DrawActivity.all[activityIndex] }
@@ -85,14 +83,22 @@ struct LetsDrawView: View {
                     .clipped()
                     .ignoresSafeArea(.all)
 
-                if showReward {
+                if showAllDone {
+                    AllDoneView(completedCount: completedCount, geo: geo) {
+                        dismiss()
+                    }
+                    .transition(.opacity)
+                    .zIndex(3)
+                } else if showReward {
                     RewardView(
                         word: activity.word,
                         imageName: activity.imageName,
                         modelName: activity.modelName,
-                        geo: geo
+                        stars: earnedStars,
+                        geo: geo,
+                        isLastActivity: activityIndex == DrawActivity.all.count - 1
                     ) {
-                        dismiss()
+                        advanceActivity(geo: geo)
                     }
                     .transition(.opacity)
                     .zIndex(2)
@@ -100,26 +106,38 @@ struct LetsDrawView: View {
                     let isLand = geo.size.width > geo.size.height
                     let minDim = min(geo.size.width, geo.size.height)
                     VStack(spacing: 0) {
-                        ZStack {
-                            Text(activity.word)
-                                .font(.app(size: min(minDim * 0.04, 26)))
-                                .foregroundStyle(Color.appOrange)
-
-                            HStack {
-                                BackButton {
-                                    if strokes.isEmpty {
-                                        dismiss()
-                                    } else {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showLeaveAlert = true }
-                                    }
+                        HStack(spacing: 0) {
+                            BackButton {
+                                if strokes.isEmpty {
+                                    dismiss()
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showLeaveAlert = true }
                                 }
-                                Spacer()
                             }
+                            Spacer()
+                            HStack(spacing: minDim * 0.008) {
+                                ForEach(0..<DrawActivity.all.count, id: \.self) { i in
+                                    Circle()
+                                        .fill(
+                                            i < completedCount
+                                            ? Color(red: 0.18, green: 0.65, blue: 0.35)
+                                            : i == activityIndex
+                                            ? Color.appOrange
+                                            : Color.appCardBorder
+                                        )
+                                        .frame(
+                                            width:  i == activityIndex ? minDim * 0.016 : minDim * 0.010,
+                                            height: i == activityIndex ? minDim * 0.016 : minDim * 0.010
+                                        )
+                                        .animation(.spring(response: 0.28), value: activityIndex)
+                                }
+                            }
+                            Spacer()
+                            Color.clear.frame(width: 44, height: 44)
                         }
-                        .padding(.horizontal, geo.size.width * 0.03)
-                        .padding(.top, max(geo.safeAreaInsets.top, geo.size.height * 0.04))
-
-                        Spacer(minLength: geo.size.height * 0.01)
+                        .padding(.horizontal, geo.size.width * 0.04)
+                        .padding(.top, geo.size.height * 0.02)
+                        .padding(.bottom, geo.size.height * 0.01)
 
                         Image(activity.imageName)
                             .resizable()
@@ -174,10 +192,33 @@ struct LetsDrawView: View {
             }
         }
         .onAppear {
-            activityIndex = startIndex
+            let total = DrawActivity.all.count
+            if savedCount >= total {
+                completedCount = 0
+                activityIndex = 0
+                savedCount = 0
+            } else {
+                completedCount = savedCount
+                activityIndex = savedCount
+            }
             #if os(iOS)
             ModelCache.shared.preload(activity.modelName)
             #endif
+        }
+    }
+
+    private func advanceActivity(geo: GeometryProxy) {
+        completedCount += 1
+        savedCount = completedCount
+        let next = activityIndex + 1
+        if next >= DrawActivity.all.count {
+            withAnimation(.easeInOut(duration: 0.45)) { showAllDone = true }
+        } else {
+            withAnimation(.easeInOut(duration: 0.35)) { showReward = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                resetRound()
+                activityIndex = next
+            }
         }
     }
 
@@ -189,8 +230,10 @@ struct LetsDrawView: View {
             maxW: outlineMaxW, maxH: outlineMaxH,
             cardW: cardW, cardH: cardH
         )
+        print("[DRAW] loadOutline \(imgName) rect=\(rect)")
         DispatchQueue.global(qos: .userInitiated).async {
-            let path = extractOutlinePath(imageNamed: imgName, scaledTo: rect)
+            let path = manualOutlinePath(for: imgName, in: rect)
+            print("[DRAW] path for \(imgName): \(path == nil ? "NIL" : "OK \(path!.boundingBox)")")
             guard let p = path else { return }
             let hz = p.copy(strokingWithWidth: 24, lineCap: .round, lineJoin: .round, miterLimit: 10)
             let samples = samplePath(p, count: 400)
@@ -231,49 +274,37 @@ struct LetsDrawView: View {
     private func drawToolbar(geo: GeometryProxy) -> some View {
         let minDim = min(geo.size.width, geo.size.height)
         let dotSize: CGFloat = min(minDim * 0.05, 34)
-        ZStack {
-            // Colors centered
-            HStack(spacing: minDim * 0.02) {
-                Image(systemName: "paintbrush.pointed.fill")
-                    .font(.system(size: dotSize * 0.7, weight: .bold))
-                    .foregroundStyle(selectedColor.opacity(0.8))
-                    .animation(.easeInOut(duration: 0.2), value: selectedColor)
-
-                ForEach(Self.presetColors, id: \.self) { color in
-                    Circle()
-                        .fill(color)
-                        .frame(width: dotSize, height: dotSize)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white, lineWidth: selectedColor == color ? 3 : 0)
-                        )
-                        .shadow(color: selectedColor == color ? color.opacity(0.6) : .clear, radius: 6)
-                        .scaleEffect(selectedColor == color ? 1.15 : 1.0)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.6), value: selectedColor)
-                        .accessibilityLabel("Color")
-                        .onTapGesture {
-                            selectedColor = color
-                            SoundPlayer.shared.play(.tap)
-                        }
-                }
+        HStack(spacing: minDim * 0.02) {
+            ForEach(Self.presetColors, id: \.self) { color in
+                Circle()
+                    .fill(color)
+                    .frame(width: dotSize, height: dotSize)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.white, lineWidth: selectedColor == color ? 3 : 0)
+                    )
+                    .shadow(color: selectedColor == color ? color.opacity(0.6) : .clear, radius: 6)
+                    .scaleEffect(selectedColor == color ? 1.15 : 1.0)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: selectedColor)
+                    .onTapGesture {
+                        selectedColor = color
+                        SoundPlayer.shared.play(.tap)
+                    }
             }
 
-            // Undo pinned to trailing
-            HStack {
-                Spacer()
-                Button {
-                    undoLastStroke()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward.circle.fill")
-                        .font(.system(size: dotSize * 0.85, weight: .bold))
-                        .foregroundStyle(strokes.isEmpty ? Color.gray.opacity(0.4) : Color(red: 0.52, green: 0.30, blue: 0.10))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Undo")
-                .disabled(strokes.isEmpty || isComplete)
+            Spacer().frame(width: minDim * 0.02)
+
+            Button {
+                undoLastStroke()
+            } label: {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: dotSize * 0.85, weight: .bold))
+                    .foregroundStyle(strokes.isEmpty ? Color.gray.opacity(0.4) : Color(red: 0.52, green: 0.30, blue: 0.10))
             }
+            .buttonStyle(.plain)
+            .disabled(strokes.isEmpty || isComplete)
         }
-        .padding(.horizontal, geo.size.width * 0.04)
+        .padding(.horizontal, geo.size.width * 0.06)
     }
 
     private func undoLastStroke() {
@@ -298,7 +329,7 @@ struct LetsDrawView: View {
         coveragePercent = outlineSamples.isEmpty ? 0 : CGFloat(hitSamples.count) / CGFloat(outlineSamples.count)
         let milestone = Int(coveragePercent * 100) / 25
         lastMilestone = milestone
-        isComplete = coveragePercent >= 0.95
+        isComplete = coveragePercent >= 0.88
     }
 
     private func checkPointSilent(_ pt: CGPoint) {
@@ -369,7 +400,7 @@ struct LetsDrawView: View {
                 ProgressRing(progress: min(coveragePercent, 1.0))
                     .frame(width: 50, height: 50)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(22)
+                    .padding(14)
                     .allowsHitTesting(false)
             }
         }
@@ -456,22 +487,12 @@ struct LetsDrawView: View {
                 speaker.speak(msg)
             }
 
-            if pct >= 0.95 && !isComplete {
-                isComplete = true
-                AchievementStore.shared.setStars(activity: activity.imageName, type: "draw", stars: 1)
+            if pct >= 0.80 && !isComplete {                isComplete = true
+                earnedStars = AchievementStore.drawStars(coverage: pct)
+                AchievementStore.shared.setStars(activity: activity.imageName, type: "draw", stars: earnedStars)
                 SoundPlayer.shared.play(.success)
                 #if os(iOS)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                // Save drawing to gallery
-                DrawingStorage.shared.saveDrawing(
-                    strokes: strokes,
-                    strokeColors: strokeColors,
-                    outlinePath: outlinePath,
-                    cardSize: CGSize(width: lastCardW, height: lastCardH),
-                    word: activity.word,
-                    imageName: activity.imageName,
-                    stars: 1
-                )
                 #endif
                 let doneMsg = "Amazing! You drew a \(activity.word.lowercased())!"
                 showMascotMessage(doneMsg)
@@ -538,8 +559,9 @@ private func extractOutlinePath(imageNamed name: String, scaledTo targetRect: CG
     let handler = VNImageRequestHandler(cgImage: greyImage, orientation: .up, options: [:])
     guard (try? handler.perform([request])) != nil,
           let obs = request.results?.first as? VNContoursObservation else {
-        return nil
+        print("[VISION] no observation for \(name)"); return nil
     }
+    print("[VISION] \(name): \(obs.topLevelContours.count) top-level contours")
 
     // Pick the largest contour (skip image border artifacts >95%)
     var allContours: [VNContour] = []
@@ -560,8 +582,10 @@ private func extractOutlinePath(imageNamed name: String, scaledTo targetRect: CG
         if area > bestArea { bestArea = area; best = c }
     }
     guard let contour = best else {
+        print("[VISION] \(name): no suitable contour from \(allContours.count) total")
         return nil
     }
+    print("[VISION] \(name): chose contour bb=\(contour.normalizedPath.boundingBox)")
 
     // Map Vision normalised coords (bottom-left origin, Y-up) → targetRect
     let cBB = contour.normalizedPath.boundingBox
@@ -576,7 +600,137 @@ private func extractOutlinePath(imageNamed name: String, scaledTo targetRect: CG
     return nil
     #endif
 }
+private func manualOutlinePath(for name: String, in rect: CGRect) -> CGPath? {
+    let path = UIBezierPath()
 
+    switch name.lowercased() {
+
+    case "star":
+        let points = 5
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        for i in 0..<points * 2 {
+            let angle = Double(i) * .pi / Double(points)
+            let pointRadius = i.isMultiple(of: 2) ? radius : radius / 2
+            let x = center.x + CGFloat(cos(angle - .pi/2)) * pointRadius
+            let y = center.y + CGFloat(sin(angle - .pi/2)) * pointRadius
+            if i == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        path.close()
+
+    case "book":
+        let left = rect.minX
+        let right = rect.maxX
+        let top = rect.minY
+        let bottom = rect.maxY
+        let midX = rect.midX
+
+        path.move(to: CGPoint(x: left, y: top))
+        path.addLine(to: CGPoint(x: midX, y: top + rect.height * 0.1))
+        path.addLine(to: CGPoint(x: midX, y: bottom - rect.height * 0.1))
+        path.addLine(to: CGPoint(x: left, y: bottom))
+        path.close()
+
+        path.move(to: CGPoint(x: midX, y: top + rect.height * 0.1))
+        path.addLine(to: CGPoint(x: right, y: top))
+        path.addLine(to: CGPoint(x: right, y: bottom))
+        path.addLine(to: CGPoint(x: midX, y: bottom - rect.height * 0.1))
+        path.close()
+
+    case "bag":
+        let cornerRadius = rect.width * 0.2
+
+        path.move(to: CGPoint(x: rect.minX + cornerRadius, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + cornerRadius),
+                          controlPoint: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + cornerRadius, y: rect.minY),
+                          controlPoint: CGPoint(x: rect.minX, y: rect.minY))
+        path.close()
+
+    case "cup":
+        let bodyWidth = rect.width * 0.65
+        let bodyLeft = rect.midX - bodyWidth / 2
+        let bodyRight = rect.midX + bodyWidth / 2
+        let bottomInset = rect.width * 0.1
+
+        // Cup body
+        path.move(to: CGPoint(x: bodyLeft, y: rect.minY))
+        path.addLine(to: CGPoint(x: bodyRight, y: rect.minY))
+        path.addLine(to: CGPoint(x: bodyRight - bottomInset, y: rect.maxY))
+        path.addLine(to: CGPoint(x: bodyLeft + bottomInset, y: rect.maxY))
+        path.close()
+
+        // Handle (two curves to form shape)
+        let handleStart = CGPoint(x: bodyRight, y: rect.minY + rect.height * 0.25)
+        let handleEnd = CGPoint(x: bodyRight, y: rect.minY + rect.height * 0.75)
+
+        path.move(to: handleStart)
+
+        path.addCurve(
+            to: handleEnd,
+            controlPoint1: CGPoint(x: rect.maxX + rect.width * 0.25, y: rect.midY - rect.height * 0.1),
+            controlPoint2: CGPoint(x: rect.maxX + rect.width * 0.25, y: rect.midY + rect.height * 0.1)
+        )
+
+    case "dog":
+        let bodyTop = rect.minY + rect.height * 0.3
+
+        // Body
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.2, y: bodyTop))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.2, y: bodyTop))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.1, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.1, y: rect.maxY))
+        path.close()
+
+        // Head
+        path.move(to: CGPoint(x: rect.midX - rect.width * 0.2, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX + rect.width * 0.2, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX + rect.width * 0.15, y: bodyTop))
+        path.addLine(to: CGPoint(x: rect.midX - rect.width * 0.15, y: bodyTop))
+        path.close()
+        
+    case "sun":
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) * 0.3
+
+        // Circle
+        path.addArc(withCenter: center,
+                    radius: radius,
+                    startAngle: 0,
+                    endAngle: CGFloat.pi * 2,
+                    clockwise: true)
+
+        // Rays
+        let rayCount = 12
+        for i in 0..<rayCount {
+            let angle = CGFloat(i) * (2 * .pi / CGFloat(rayCount))
+            let start = CGPoint(
+                x: center.x + cos(angle) * radius,
+                y: center.y + sin(angle) * radius
+            )
+            let end = CGPoint(
+                x: center.x + cos(angle) * (radius + rect.width * 0.15),
+                y: center.y + sin(angle) * (radius + rect.width * 0.15)
+            )
+            path.move(to: start)
+            path.addLine(to: end)
+        }
+        
+    
+    default:
+        return extractOutlinePath(imageNamed: name, scaledTo: rect)
+    }
+
+    return path.cgPath
+}
 // MARK: - Geometry helpers
 
 private func centredRect(imageNamed name: String, maxW: CGFloat, maxH: CGFloat,
@@ -677,7 +831,9 @@ private struct RewardView: View {
     let word: String
     let imageName: String
     let modelName: String
+    let stars: Int
     let geo: GeometryProxy
+    let isLastActivity: Bool
     let onContinue: () -> Void
     @State private var modelVisible = false
     @State private var labelVisible = false
@@ -716,6 +872,9 @@ private struct RewardView: View {
                 .scaleEffect(modelVisible ? 1.0 : 0.4).opacity(modelVisible ? 1.0 : 0)
                 .animation(.spring(response: 0.65, dampingFraction: 0.58).delay(0.1), value: modelVisible)
             #endif
+            StarRatingView(stars: stars, size: min(minDim * 0.065, 40))
+                .scaleEffect(labelVisible ? 1.0 : 0.6).opacity(labelVisible ? 1.0 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.4), value: labelVisible)
             Text(word)
                 .font(.app(size: min(minDim * 0.10, 60)))
                 .foregroundStyle(Color(red: 0.28, green: 0.24, blue: 0.20))
@@ -724,10 +883,12 @@ private struct RewardView: View {
             Spacer()
             Button(action: onContinue) {
                 HStack(spacing: minDim * 0.015) {
-                    Text("DONE")
+                    Text(isLastActivity ? "ALL DONE!" : "NEXT DRAWING")
                         .font(.app(size: min(minDim * 0.035, 22)))
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
+                    if !isLastActivity {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: min(minDim * 0.035, 22), weight: .bold))
+                    }
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, geo.size.width * 0.05)
