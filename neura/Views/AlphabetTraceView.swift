@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreText
+import CoreGraphics
 
 // MARK: - Alphabet Model
 
@@ -33,6 +35,9 @@ struct AlphabetTraceView: View {
     @State private var selectedColor: Color = .blue
     @State private var showSuccess = false
     @State private var showAllDone = false
+    
+    @State private var scaledLetterPath: CGPath?
+    @State private var letterBounds: CGRect = .zero
     
     @StateObject private var speaker = WordSpeaker()
     
@@ -142,18 +147,23 @@ struct AlphabetTraceView: View {
                 
                 ZStack {
                     
-                    Text(String(letter))
-                        .font(.system(size: fontSize, weight: .bold, design: .rounded))
-                        .foregroundColor(.gray.opacity(0.25))
-                        .frame(width: rect.width, height: rect.height)
-                    
-                    Canvas { ctx, _ in
+                    Canvas { ctx, size in
                         let style = StrokeStyle(
                             lineWidth: max(18, fontSize * 0.06),
                             lineCap: .round,
                             lineJoin: .round
                         )
                         
+                        // Draw the letter outline as a guide
+                        if let letterPath = scaledLetterPath {
+                            ctx.stroke(
+                                Path(letterPath),
+                                with: .color(.gray.opacity(0.25)),
+                                style: style
+                            )
+                        }
+                        
+                        // Draw completed strokes
                         for stroke in strokes {
                             guard stroke.count > 1 else { continue }
                             var path = Path()
@@ -161,11 +171,18 @@ struct AlphabetTraceView: View {
                             ctx.stroke(path, with: .color(selectedColor), style: style)
                         }
                         
+                        // Draw current stroke
                         if currentStroke.count > 1 {
                             var path = Path()
                             path.addLines(currentStroke)
                             ctx.stroke(path, with: .color(selectedColor), style: style)
                         }
+                    }
+                    .onAppear {
+                        prepareLetterPath(for: rect, fontSize: fontSize)
+                    }
+                    .onChange(of: letter) {
+                        prepareLetterPath(for: rect, fontSize: fontSize)
                     }
                 }
                 .gesture(
@@ -187,15 +204,195 @@ struct AlphabetTraceView: View {
         }
         .padding(30)
     }
+
+    private func prepareLetterPath(for rect: CGRect, fontSize: CGFloat) {
+        guard let rawPath = getLetterOutline(fontSize: fontSize) else { return }
+        
+        // Get the bounds of the raw path
+        var boundingBox = CGRect.zero
+        rawPath.applyWithBlock { element in
+            let point = element.pointee.points[0]
+            if boundingBox.isEmpty {
+                boundingBox = CGRect(x: point.x, y: point.y, width: 0, height: 0)
+            } else {
+                boundingBox = boundingBox.union(CGRect(x: point.x, y: point.y, width: 0, height: 0))
+            }
+        }
+        
+        // Calculate scale to fit the letter in the canvas with some padding
+        let padding = rect.width * 0.1
+        let availableWidth = rect.width - (padding * 2)
+        let availableHeight = rect.height - (padding * 2)
+        
+        let scaleX = boundingBox.width > 0 ? availableWidth / boundingBox.width : 1
+        let scaleY = boundingBox.height > 0 ? availableHeight / boundingBox.height : 1
+        let scale = min(scaleX, scaleY)
+        
+        // Center the letter
+        let scaledWidth = boundingBox.width * scale
+        let scaledHeight = boundingBox.height * scale
+        let offsetX = (rect.width - scaledWidth) / 2 - (boundingBox.minX * scale)
+        let offsetY = (rect.height - scaledHeight) / 2 - (boundingBox.minY * scale)
+        
+        // Create transformation and apply it
+        var transform = CGAffineTransform(translationX: offsetX, y: offsetY)
+        transform = transform.scaledBy(x: scale, y: scale)
+        transform = transform.scaledBy(x: 1, y: -1) // Flip vertically
+        
+        scaledLetterPath = rawPath.copy(using: &transform)
+        letterBounds = CGRect(x: offsetX, y: offsetY, width: scaledWidth, height: scaledHeight)
+    }
+
+    private func getLetterOutline(fontSize: CGFloat) -> CGPath? {
+        let ctFont = CTFontCreateUIFontForLanguage(.system, fontSize, nil)
+        
+        let string = String(letter)
+        var unichar = (string.utf16.first ?? 0)
+        var glyph = CGGlyph()
+        
+        CTFontGetGlyphsForCharacters(ctFont!, &unichar, &glyph, 1)
+        
+        return CTFontCreatePathForGlyph(ctFont!, glyph, nil)
+    }
     
     // MARK: - Completion Logic
+
+    // Add these functions to your view model or view
     
     private func evaluateCompletion() {
-        let totalPoints = strokes.flatMap { $0 }.count
+        guard let letterPath = scaledLetterPath else {
+            print("Letter path not ready yet")
+            return
+        }
         
-        if totalPoints > 250 {
+        let drawnPoints = strokes.flatMap { $0 }
+        
+        guard drawnPoints.count > 20 else { return }
+        
+        let coveragePercentage = calculatePathCoverage(drawnPoints, against: letterPath)
+        let proximityScore = calculateProximityScore(drawnPoints, to: letterPath)
+        
+        print("Check Coverage: \(coveragePercentage * 100)%")
+        print("Check Proximity: \(proximityScore * 100)%")
+        
+        let coverageThreshold: CGFloat = 0.55
+        let proximityThreshold: CGFloat = 0.65
+        
+        let isSuccessful = coveragePercentage > coverageThreshold &&
+                          proximityScore > proximityThreshold
+        
+        if isSuccessful {
             triggerSuccess()
         }
+    }
+
+    private func calculatePathCoverage(_ drawnPoints: [CGPoint], against letterPath: CGPath) -> CGFloat {
+        let proximityThreshold: CGFloat = 15.0
+        let outlinePoints = samplePathPoints(letterPath, sampleCount: 200)
+        
+        let coveredPoints = outlinePoints.filter { outlinePoint in
+            drawnPoints.contains { drawnPoint in
+                distance(drawnPoint, to: outlinePoint) <= proximityThreshold
+            }
+        }
+        
+        return outlinePoints.isEmpty ? 0 : CGFloat(coveredPoints.count) / CGFloat(outlinePoints.count)
+    }
+
+    private func calculateProximityScore(_ drawnPoints: [CGPoint], to letterPath: CGPath) -> CGFloat {
+        let proximityThreshold: CGFloat = 20.0
+        
+        let nearbyPoints = drawnPoints.filter { drawnPoint in
+            distance(drawnPoint, to: closestPointOnPath(drawnPoint, path: letterPath)) <= proximityThreshold
+        }
+        
+        return drawnPoints.isEmpty ? 0 : CGFloat(nearbyPoints.count) / CGFloat(drawnPoints.count)
+    }
+
+    private func samplePathPoints(_ path: CGPath, sampleCount: Int) -> [CGPoint] {
+        var points: [CGPoint] = []
+        
+        path.applyWithBlock { elementPointer in
+            let element = elementPointer.pointee
+            switch element.type {
+            case .moveToPoint:
+                points.append(element.points[0])
+            case .addLineToPoint:
+                points.append(element.points[0])
+            case .addQuadCurveToPoint:
+                // Sample a quad curve
+                let start = points.last ?? element.points[0]
+                let control = element.points[0]
+                let end = element.points[1]
+                for i in 1...5 {
+                    let t = CGFloat(i) / 5.0
+                    let point = quadraticBezier(start, control, end, t: t)
+                    points.append(point)
+                }
+            case .addCurveToPoint:
+                // Sample a cubic curve
+                let start = points.last ?? element.points[0]
+                let control1 = element.points[0]
+                let control2 = element.points[1]
+                let end = element.points[2]
+                for i in 1...10 {
+                    let t = CGFloat(i) / 10.0
+                    let point = cubicBezier(start, control1, control2, end, t: t)
+                    points.append(point)
+                }
+            case .closeSubpath:
+                break
+            @unknown default:
+                break
+            }
+        }
+        
+        return points
+    }
+
+    private func closestPointOnPath(_ point: CGPoint, path: CGPath) -> CGPoint {
+        var closestPoint = CGPoint.zero
+        var closestDistance = CGFloat.greatestFiniteMagnitude
+        
+        let samplePoints = samplePathPoints(path, sampleCount: 500)
+        
+        for samplePoint in samplePoints {
+            let dist = distance(point, to: samplePoint)
+            if dist < closestDistance {
+                closestDistance = dist
+                closestPoint = samplePoint
+            }
+        }
+        
+        return closestPoint.equalTo(.zero) ? point : closestPoint
+    }
+
+    // Quadratic Bezier curve
+    private func quadraticBezier(_ start: CGPoint, _ control: CGPoint, _ end: CGPoint, t: CGFloat) -> CGPoint {
+        let mt = 1 - t
+        let x = mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x
+        let y = mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y
+        return CGPoint(x: x, y: y)
+    }
+
+    // Cubic Bezier curve
+    private func cubicBezier(_ start: CGPoint, _ control1: CGPoint, _ control2: CGPoint, _ end: CGPoint, t: CGFloat) -> CGPoint {
+        let mt = 1 - t
+        let mt2 = mt * mt
+        let mt3 = mt2 * mt
+        let t2 = t * t
+        let t3 = t2 * t
+        
+        let x = mt3 * start.x + 3 * mt2 * t * control1.x + 3 * mt * t2 * control2.x + t3 * end.x
+        let y = mt3 * start.y + 3 * mt2 * t * control1.y + 3 * mt * t2 * control2.y + t3 * end.y
+        
+        return CGPoint(x: x, y: y)
+    }
+
+    private func distance(_ p1: CGPoint, to p2: CGPoint) -> CGFloat {
+        let dx = p1.x - p2.x
+        let dy = p1.y - p2.y
+        return sqrt(dx * dx + dy * dy)
     }
     
     private func triggerSuccess() {
@@ -256,7 +453,7 @@ struct AlphabetTraceView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 360)
-            .onChange(of: showUppercase) { _ in
+            .onChange(of: showUppercase) { _, _ in
                 clear()
             }
             
