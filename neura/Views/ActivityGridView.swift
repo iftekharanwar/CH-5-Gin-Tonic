@@ -7,6 +7,8 @@ enum ActivityType: String, Hashable {
 
     var title: String {
         switch self {
+
+        case .trace: return "TRACE"
         case .draw: return "DRAW"
         case .fill: return "FILL"
         }
